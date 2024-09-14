@@ -1,6 +1,13 @@
-module Main (main) where
+module Main
+    ( main
+    ) where
 
-import Lib
+import           Parser
+import           System.Environment
+import           Text.Parsec.Text   (parseFromFile)
 
 main :: IO ()
-main = someFunc
+main = do
+  [fName] <- getArgs
+  result <- parseFromFile Parser.mod fName
+  putStrLn . show $ result

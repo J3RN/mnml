@@ -25,9 +25,7 @@ source-repository head
 
 library
   exposed-modules:
-      Lib
       Parser
-      Tokenizer
   other-modules:
       Paths_miniML
   autogen-modules:
