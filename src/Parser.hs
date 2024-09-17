@@ -8,6 +8,7 @@ module Parser
 
 import           Data.Char   (GeneralCategory (LineSeparator), generalCategory,
                               isSpace)
+import           Data.Functor (($>))
 import           Data.Text
 import           Text.Parsec
 
@@ -54,6 +55,7 @@ data Literal
 
 data Pattern
   = PVar Text
+  | PDiscard -- _
   | PConstructor Text [Pattern]
   | PRecord [(Text, Pattern)]
   | PList [Pattern]
@@ -261,6 +263,7 @@ pattern =
     <|> recordPattern
     <|> listPattern
     <|> literalPattern
+    <|> char '_' $> PDiscard
     <|> PVar <$> identifier
 
 constructorPattern :: Parser Pattern
