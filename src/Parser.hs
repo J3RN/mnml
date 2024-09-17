@@ -30,6 +30,7 @@ data Type
   | TList Type -- TInt
   | TFun [Type] Type -- [TInt, TInt] -> TInt
   | TRecord [(Text, Type)] -- [("name", TString), ...]
+  | TGeneric -- "a"
   deriving (Show)
 
 data Expr
