@@ -1,15 +1,14 @@
 module Inference
-    ( Context
-    , _bindings
-    , infer
+    ( infer
     ) where
 
-import qualified Data.Map   as Map
+import           Data.Bifunctor (first)
+import qualified Data.Map       as Map
 import           Data.Maybe
-import           Data.Text
-import           Lens.Micro (Lens', lens, over)
-import           Parser     (Declaration (..), Expr (..), Literal (..),
-                             Type (..), parse)
+import           Data.Text      (Text, pack)
+import           Lens.Micro     (Lens', lens, over)
+import           Parser         (Declaration (..), Expr (..), Literal (..),
+                                 Type (..), parse)
 
 -- TODO: Name bad, fix later
 type Modules = Map.Map Text Text
@@ -29,17 +28,16 @@ bindings = lens _bindings (\context newBindings -> context {_bindings = newBindi
 
 -- Infer the type for a value
 infer :: Modules -> Text -> Text -> Either Text Type
-infer modules modName valueName = do
-  ast <- maybe (Left (mconcat [modName, ".", valueName, " not found"])) Right $ loadValueDef modules modName valueName
-  inferFromExpr
-    ( Context
-        { _modules = modules,
-          _bindings = Map.empty,
-          _modName = modName,
-          _valueName = valueName
-        }
-    )
-    ast
+infer modules modName valueName =
+  loadValueDef modules modName valueName
+    >>= inferFromExpr
+      ( Context
+          { _modules = modules,
+            _bindings = Map.empty,
+            _modName = modName,
+            _valueName = valueName
+          }
+      )
 
 inferFromExpr :: Context -> Expr -> Either Text Type
 inferFromExpr context (EVar name) =
@@ -56,17 +54,13 @@ inferFromExpr context (EApp funExpr _args) =
   case funExpr of
     lambda@(ELambda _ _) -> inferFromExpr context lambda
     EVar funName ->
-      maybe
-        ( maybe
-            (Left (mconcat ["Function ", funName, " not found"]))
-            (inferFromExpr context)
-            (loadValueDef (_modules context) (_modName context) funName)
-        )
-        ( \case
-            (TFun _args ret) -> Right ret
-            t -> Left (mconcat [funName, " is not a function, it is ", pack . show $ t])
-        )
-        ((Map.!?) (_bindings context) funName)
+      case (Map.!?) (_bindings context) funName of
+        Just var ->
+          ( case var of
+              (TFun _args ret) -> Right ret
+              t -> Left (mconcat [funName, " is not a function, it is ", pack . show $ t])
+          )
+        Nothing -> loadValueDef (_modules context) (_modName context) funName >>= inferFromExpr context
     expr -> Left (mconcat [pack . show $ expr, " is not a function"])
 inferFromExpr context (ECase _ branches) = maybe (Right TGeneric) (inferFromExpr context . snd) (listToMaybe branches)
 inferFromExpr _context (EBinary _ _ _) = Right TInt
@@ -75,7 +69,7 @@ inferFromExpr context (EList elements) = TList <$> maybe (Right TGeneric) (infer
 
 addBindings :: Context -> [Text] -> Context
 addBindings context varNames =
-  over bindings (Map.union (Map.fromList (Prelude.zip varNames (repeat TGeneric)))) context
+  over bindings (Map.union (Map.fromList (map (,TGeneric) varNames))) context
 
 litType :: Literal -> Type
 litType (LInt _)    = TInt
@@ -92,20 +86,23 @@ buildRecType context fields =
       )
       fields
 
-loadValueDef :: Modules -> Text -> Text -> Maybe Expr
+loadValueDef :: Modules -> Text -> Text -> Either Text Expr
 loadValueDef modules modName valueName = do
-  modAst <- loadModuleAst modules modName
-  findValue modAst valueName
-
-loadModuleAst :: Modules -> Text -> Maybe [Declaration]
-loadModuleAst modules modName = do
   -- TODO: Check cache, have a cache, etc
-  moduleText <- (Map.!?) modules modName
-  either (const Nothing) Just (Parser.parse modName moduleText)
+  ast <- loadModuleAst modules modName
+  case findValue ast valueName of
+    Just expr -> Right expr
+    Nothing -> Left (mconcat ["Value '", modName, ".", valueName, "' not found"])
+
+loadModuleAst :: Modules -> Text -> Either Text [Declaration]
+loadModuleAst modules modName =
+  -- TODO: Check cache, have a cache, etc
+  case (Map.!?) modules modName of
+    Just text -> first (pack . show) $ Parser.parse modName text
+    Nothing   -> Left (mconcat ["Module '", modName, "' not found"])
 
 findValue :: [Declaration] -> Text -> Maybe Expr
 findValue modu valueName =
-  -- TODO: Check cache, have a cache, etc
   listToMaybe $
     mapMaybe
       ( \case
