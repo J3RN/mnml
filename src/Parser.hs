@@ -59,7 +59,9 @@ data Operator = Add | Sub | Mul | Div | Pipe
 
 -- Top-level Parsers
 mod :: Parser [Declaration]
-mod = many decl
+mod = do
+  _ <- many whiteSpace
+  manyTill (decl <* many whiteSpace) eof
 
 decl :: Parser Declaration
 decl = typeDecl <|> typeAliasDecl <|> valueDecl
