@@ -172,17 +172,11 @@ expression =
 
 lambdaExpr :: Parser Expr
 lambdaExpr = do
-  _ <- char '('
-  params <- commaSep identifier
-  _ <- char ')'
+  params <- parens (commaSep identifier)
   _ <- many whiteSpace
   _ <- string "=>"
   _ <- many whiteSpace
-  _ <- char '{'
-  _ <- many whiteSpace
-  body <- expression
-  _ <- many whiteSpace
-  _ <- char '}'
+  body <- braces expression
   return $ ELambda params body
 
 caseExpr :: Parser Expr
