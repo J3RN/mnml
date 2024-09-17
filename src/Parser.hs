@@ -158,12 +158,18 @@ expression =
 
 lambdaExpr :: Parser Expr
 lambdaExpr = do
-    _ <- char '('
-    params <- commaSep identifier
-    _ <- string "=>"
-    body <- expression
-    _ <- char ')'
-    return $ ELambda params body
+  _ <- char '('
+  params <- commaSep identifier
+  _ <- char ')'
+  _ <- many whiteSpace
+  _ <- string "=>"
+  _ <- many whiteSpace
+  _ <- char '{'
+  _ <- many whiteSpace
+  body <- expression
+  _ <- many whiteSpace
+  _ <- char '}'
+  return $ ELambda params body
 
 caseExpr :: Parser Expr
 caseExpr = do
