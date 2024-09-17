@@ -19,7 +19,7 @@ data Declaration
   = TypeDecl Text [(Text, [Type])]
   | TypeAliasDecl Text [(Text, Type)]
   | ValueDecl Text Expr
-  deriving (Show)
+  deriving (Eq, Show)
 
 data Type
   = TInt
@@ -31,7 +31,7 @@ data Type
   | TFun [Type] Type -- [TInt, TInt] -> TInt
   | TRecord [(Text, Type)] -- [("name", TString), ...]
   | TGeneric -- "a"
-  deriving (Show)
+  deriving (Eq, Show)
 
 data Expr
   = EVar Text
@@ -42,14 +42,14 @@ data Expr
   | EBinary Expr Operator Expr
   | ERecord [(Text, Expr)]
   | EList [Expr]
-  deriving (Show)
+  deriving (Eq, Show)
 
 data Literal
   = LInt Integer
   | LFloat Double
   | LChar Char
   | LString Text
-  deriving (Show)
+  deriving (Eq, Show)
 
 data Pattern
   = PVar Text
@@ -57,10 +57,10 @@ data Pattern
   | PRecord [(Text, Pattern)]
   | PList [Pattern]
   | PLiteral Literal
-  deriving (Show)
+  deriving (Eq, Show)
 
 data Operator = Add | Sub | Mul | Div | Pipe
-  deriving (Show)
+  deriving (Eq, Show)
 
 -- Client API
 parse :: Text -> Text -> Either ParseError [Declaration]
