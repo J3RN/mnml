@@ -100,58 +100,61 @@ valueDecl = do
 -- Basic Parsers
 
 identifier :: Parser Text
-identifier = pack <$>((:) <$> letter <*> many (alphaNum <|> char '_'))
+identifier = pack <$> ((:) <$> letter <*> many (alphaNum <|> char '_'))
 
 typeIdentifier :: Parser Text
-typeIdentifier = pack <$>((:) <$> upper <*> many alphaNum)
+typeIdentifier = pack <$> ((:) <$> upper <*> many alphaNum)
 
 -- Type Parsers
 
 pType :: Parser Type
-pType = try funType
+pType =
+  try funType
     <|> try recordType
     <|> listType
     <|> simpleType
 
 funType :: Parser Type
 funType = do
-    argTypes <- parens (commaSep pType)
-    _ <- many whiteSpace
-    _ <- string "->"
-    _ <- many whiteSpace
-    returnType <- pType
-    return (TFun argTypes returnType)
+  argTypes <- parens (commaSep pType)
+  _ <- many whiteSpace
+  _ <- string "->"
+  _ <- many whiteSpace
+  returnType <- pType
+  return (TFun argTypes returnType)
 
 recordType :: Parser Type
 recordType = do
-    fields <- braces (commaSep fieldDecl)
-    return $ TRecord fields
+  fields <- braces (commaSep fieldDecl)
+  return $ TRecord fields
 
 fieldDecl :: Parser (Text, Type)
 fieldDecl = do
-    fieldName <- identifier
-    _ <- many whiteSpace >> char ':' >> many whiteSpace
-    fieldType <- pType
-    return (fieldName, fieldType)
+  fieldName <- identifier
+  _ <- many whiteSpace >> char ':' >> many whiteSpace
+  fieldType <- pType
+  return (fieldName, fieldType)
 
 listType :: Parser Type
-listType = TList <$>brackets pType
+listType = TList <$> brackets pType
 
 simpleType :: Parser Type
-simpleType = (TInt <$ string "Int")
-         <|> (TFloat <$ string "Float")
-         <|> (TChar <$ string "Char")
-         <|> (TString <$ string "String")
-         <|> (TNamedType <$> typeIdentifier)
+simpleType =
+  (TInt <$ string "Int")
+    <|> (TFloat <$ string "Float")
+    <|> (TChar <$ string "Char")
+    <|> (TString <$ string "String")
+    <|> (TNamedType <$> typeIdentifier)
 
 -- Expression Parsers
 
 expression :: Parser Expr
-expression = try caseExpr
-         <|> lambdaExpr
-         <|> appExpr
-         -- <|> binaryExpr
-         <|> simpleExpr
+expression =
+  try caseExpr
+    <|> lambdaExpr
+    <|> appExpr
+    -- <|> binaryExpr
+    <|> simpleExpr
 
 lambdaExpr :: Parser Expr
 lambdaExpr = do
@@ -164,28 +167,28 @@ lambdaExpr = do
 
 caseExpr :: Parser Expr
 caseExpr = do
-    _ <- string "case"
-    _ <- many1 whiteSpace
-    expr <- expression
-    _ <- many1 whiteSpace
-    _ <- string "of" >> newline
-    cases <- braces (caseBranch `sepBy` newline)
-    return $ ECase expr cases
+  _ <- string "case"
+  _ <- many1 whiteSpace
+  expr <- expression
+  _ <- many1 whiteSpace
+  _ <- string "of" >> newline
+  cases <- braces (caseBranch `sepBy` newline)
+  return $ ECase expr cases
 
 caseBranch :: Parser (Pattern, Expr)
 caseBranch = do
-    pat <- pattern
-    _ <- many whiteSpace
-    _ <- string "->"
-    _ <- many whiteSpace
-    expr <- expression
-    return (pat, expr)
+  pat <- pattern
+  _ <- many whiteSpace
+  _ <- string "->"
+  _ <- many whiteSpace
+  expr <- expression
+  return (pat, expr)
 
 appExpr :: Parser Expr
 appExpr = do
-    func <- identifier
-    args <- parens (commaSep expression)
-    return $ EApp (EVar func) args
+  func <- identifier
+  args <- parens (commaSep expression)
+  return $ EApp (EVar func) args
 
 -- TODO: Totally overhaul
 -- binaryExpr :: Parser Expr
@@ -196,59 +199,63 @@ appExpr = do
 --     return (EBinary left op right)
 
 operator :: Parser Operator
-operator = (Add <$ char '+')
-       <|> (Sub <$ char '-')
-       <|> (Mul <$ char '*')
-       <|> (Div <$ char '/')
+operator =
+  (Add <$ char '+')
+    <|> (Sub <$ char '-')
+    <|> (Mul <$ char '*')
+    <|> (Div <$ char '/')
 
 simpleExpr :: Parser Expr
-simpleExpr = EVar <$> identifier
-         <|> ELit <$> literal
-         <|> parens expression
+simpleExpr =
+  EVar <$> identifier
+    <|> ELit <$> literal
+    <|> parens expression
 
 literal :: Parser Literal
-literal = try (LFloat <$> float)
-      <|> (LInt <$> integer)
-      <|> (LChar <$> charLiteral)
-      <|> (LString <$> stringLiteral)
+literal =
+  try (LFloat <$> float)
+    <|> (LInt <$> integer)
+    <|> (LChar <$> charLiteral)
+    <|> (LString <$> stringLiteral)
 
 -- Pattern Parsers
 
 pattern :: Parser Pattern
-pattern = try constructorPattern
-      <|> recordPattern
-      <|> listPattern
-      <|> literalPattern
-      <|> PVar <$> identifier
+pattern =
+  try constructorPattern
+    <|> recordPattern
+    <|> listPattern
+    <|> literalPattern
+    <|> PVar <$> identifier
 
 constructorPattern :: Parser Pattern
 constructorPattern = do
-    con <- typeIdentifier
-    pats <- option [] (parens (commaSep pattern))
-    return $ PConstructor con pats
+  con <- typeIdentifier
+  pats <- option [] (parens (commaSep pattern))
+  return $ PConstructor con pats
 
 recordPattern :: Parser Pattern
 recordPattern = do
-    fields <- braces (commaSep fieldPattern)
-    return $ PRecord fields
+  fields <- braces (commaSep fieldPattern)
+  return $ PRecord fields
 
 -- TODO: revisit
 listPattern :: Parser Pattern
 listPattern = do
-    pats <- brackets (commaSep pattern)
-    return $ PList pats
+  pats <- brackets (commaSep pattern)
+  return $ PList pats
 
 literalPattern :: Parser Pattern
 literalPattern = PLiteral <$> literal
 
 fieldPattern :: Parser (Text, Pattern)
 fieldPattern = do
-    name <- identifier
-    _ <- many1 whiteSpace
-    _ <- char ':'
-    _ <- many1 whiteSpace
-    pat <- pattern
-    return (name, pat)
+  name <- identifier
+  _ <- many1 whiteSpace
+  _ <- char ':'
+  _ <- many1 whiteSpace
+  pat <- pattern
+  return (name, pat)
 
 -- Helper Parsers
 
@@ -257,10 +264,10 @@ integer = read <$> many1 digit
 
 float :: Parser Double
 float = do
-    intPart <- many1 digit
-    _ <- char '.'
-    fracPart <- many1 digit
-    return $ read (intPart ++ "." ++ fracPart)
+  intPart <- many1 digit
+  _ <- char '.'
+  fracPart <- many1 digit
+  return $ read (intPart ++ "." ++ fracPart)
 
 charLiteral :: Parser Char
 charLiteral = between (char '\'') (char '\'') anyChar
