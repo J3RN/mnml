@@ -6,8 +6,8 @@ module Parser
     , Type (..)
     ) where
 
-import           Data.Char   (GeneralCategory (LineSeparator), generalCategory,
-                              isSpace)
+import           Data.Char    (GeneralCategory (LineSeparator), generalCategory,
+                               isSpace)
 import           Data.Functor (($>))
 import           Data.Text
 import           Text.Parsec
@@ -103,7 +103,7 @@ typeAliasDecl = do
   _ <- char '='
   _ <- many whiteSpace
   fields <- braces (commaSep fieldDecl)
-  return (TypeAliasDecl name fields)
+  return $ TypeAliasDecl name fields
 
 valueDecl :: Parser Declaration
 valueDecl = do
@@ -111,7 +111,8 @@ valueDecl = do
   _ <- many1 whiteSpace
   _ <- char '='
   _ <- many1 whiteSpace
-  ValueDecl name <$> expression
+  expr <- expression
+  return $ ValueDecl name expr
 
 -- Basic Parsers
 
@@ -138,7 +139,7 @@ funType = do
   _ <- string "->"
   _ <- many whiteSpace
   returnType <- pType
-  return (TFun argTypes returnType)
+  return $ TFun argTypes returnType
 
 recordType :: Parser Type
 recordType = do
