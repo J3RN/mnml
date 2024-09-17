@@ -167,6 +167,7 @@ expression =
     <|> lambdaExpr
     <|> appExpr
     -- <|> binaryExpr
+    <|> recordExpr
     <|> simpleExpr
 
 lambdaExpr :: Parser Expr
@@ -216,6 +217,17 @@ appExpr = do
 --     op <- operator
 --     right <- simpleExpr
 --     return (EBinary left op right)
+
+recordExpr :: Parser Expr
+recordExpr = do
+  ERecord <$> braces (commaSep recordFieldExpr)
+
+recordFieldExpr :: Parser (Text, Expr)
+recordFieldExpr = do
+  name <- identifier
+  _ <- many whiteSpace >> char ':' >> many whiteSpace
+  value <- expression
+  return (name, value)
 
 operator :: Parser Operator
 operator =
