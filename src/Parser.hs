@@ -1,5 +1,9 @@
 module Parser
-    ( Parser.mod
+    ( Declaration (..)
+    , Expr (..)
+    , Literal (..)
+    , Parser.parse
+    , Type (..)
     ) where
 
 import           Data.Char   (GeneralCategory (LineSeparator), generalCategory,
