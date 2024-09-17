@@ -57,6 +57,10 @@ data Pattern
 data Operator = Add | Sub | Mul | Div | Pipe
   deriving (Show)
 
+-- Client API
+parse :: Text -> Text -> Either ParseError [Declaration]
+parse fName = runParser Parser.mod () (unpack fName)
+
 -- Top-level Parsers
 mod :: Parser [Declaration]
 mod = do
