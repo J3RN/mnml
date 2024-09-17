@@ -87,7 +87,9 @@ typeAliasDecl = do
   _ <- string "alias"
   _ <- many1 whiteSpace
   name <- typeIdentifier
-  _ <- many1 whiteSpace
+  _ <- many whiteSpace
+  _ <- char '='
+  _ <- many whiteSpace
   fields <- braces (commaSep fieldDecl)
   return (TypeAliasDecl name fields)
 
