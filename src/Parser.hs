@@ -40,6 +40,7 @@ data Expr
   | EApp Expr [Expr] -- (EVar "fun") [(EVar "x"), (EVar "y")]
   | ECase Expr [(Pattern, Expr)]
   | EBinary Expr Operator Expr
+  | EConstructor Text [Expr]
   | ERecord [(Text, Expr)]
   | EList [Expr]
   deriving (Eq, Show)
@@ -115,6 +116,7 @@ valueDecl = do
 identifier :: Parser Text
 identifier = pack <$> ((:) <$> letter <*> many (alphaNum <|> char '_'))
 
+-- Slight misnomer; also applies to constructors
 typeIdentifier :: Parser Text
 typeIdentifier = pack <$> ((:) <$> upper <*> many alphaNum)
 
@@ -165,6 +167,7 @@ expression :: Parser Expr
 expression =
   try caseExpr
     <|> lambdaExpr
+    <|> constructorExpr
     <|> appExpr
     -- <|> binaryExpr
     <|> recordExpr
@@ -178,6 +181,13 @@ lambdaExpr = do
   _ <- many whiteSpace
   body <- braces expression
   return $ ELambda params body
+
+constructorExpr :: Parser Expr
+constructorExpr = do
+  name <- typeIdentifier
+  _ <- many whiteSpace
+  args <- option [] $ parens (commaSep expression)
+  return $ EConstructor name args
 
 caseExpr :: Parser Expr
 caseExpr = do
