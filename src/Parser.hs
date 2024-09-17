@@ -3,6 +3,7 @@ module Parser
     , Expr (..)
     , Literal (..)
     , Parser.parse
+    , Pattern (..)
     , Type (..)
     ) where
 
@@ -198,8 +199,8 @@ caseExpr = do
   _ <- many1 whiteSpace
   expr <- expression
   _ <- many1 whiteSpace
-  _ <- string "of" >> newline
-  cases <- braces (caseBranch `sepBy` newline)
+  _ <- string "of" >> many whiteSpace >> newline
+  cases <- (many whiteSpace *> caseBranch <* many whiteSpace) `sepBy` newline
   return $ ECase expr cases
 
 caseBranch :: Parser (Pattern, Expr)

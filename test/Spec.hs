@@ -6,4 +6,4 @@ main = hspec spec
 
 spec :: Spec
 spec = do
-  describe "Parser" ParserSpec.spec
+  ParserSpec.spec
