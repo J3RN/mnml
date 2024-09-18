@@ -7,11 +7,11 @@ module Parser
     , Type (..)
     ) where
 
-import           Data.Char    (GeneralCategory (LineSeparator), generalCategory,
-                               isSpace)
-import           Data.Functor (($>))
+import           Data.Functor          (($>))
+import           Data.Functor.Identity (Identity)
 import           Data.Text
 import           Text.Parsec
+import qualified Text.Parsec.Token     as Tok
 
 -- Data Types
 
@@ -63,7 +63,7 @@ data Pattern
   | PLiteral Literal
   deriving (Eq, Show)
 
-data Operator = Add | Sub | Mul | Div | Pipe
+data Operator = Add | Sub | Mul | Div | Pipe | And | Or
   deriving (Eq, Show)
 
 -- Client API
@@ -74,7 +74,7 @@ parse fName = runParser Parser.mod () (unpack fName)
 mod :: Parser [Declaration]
 mod = do
   _ <- many whiteSpace
-  manyTill (decl <* many whiteSpace) eof
+  manyTill decl eof
 
 decl :: Parser Declaration
 decl = typeDecl <|> typeAliasDecl <|> valueDecl
@@ -82,63 +82,45 @@ decl = typeDecl <|> typeAliasDecl <|> valueDecl
 typeDecl :: Parser Declaration
 typeDecl = do
   name <- typeIdentifier
-  _ <- many whiteSpace
-  _ <- string "="
-  _ <- many whiteSpace
-  constructors <- sepBy1 constructor (many whiteSpace *> char '|' *> many whiteSpace)
+  _ <- equal
+  constructors <- sepBy1 constructor bar
   return (TypeDecl name constructors)
 
 constructor :: Parser (Text, [Type])
 constructor = do
   name <- typeIdentifier
-  _ <- many whiteSpace
   cData <- parens (commaSep pType) <|> pure []
   return (name, cData)
 
 typeAliasDecl :: Parser Declaration
 typeAliasDecl = do
-  _ <- string "alias"
-  _ <- many1 whiteSpace
+  _ <- reserved "alias"
   name <- typeIdentifier
-  _ <- many whiteSpace
-  _ <- char '='
-  _ <- many whiteSpace
+  _ <- equal
   fields <- braces (commaSep fieldDecl)
   return $ TypeAliasDecl name fields
 
 valueDecl :: Parser Declaration
 valueDecl = do
   name <- identifier
-  _ <- many1 whiteSpace
-  _ <- char '='
-  _ <- many1 whiteSpace
+  _ <- equal
   expr <- expression
   return $ ValueDecl name expr
-
--- Basic Parsers
-
-identifier :: Parser Text
-identifier = pack <$> ((:) <$> letter <*> many (alphaNum <|> char '_'))
-
--- Slight misnomer; also applies to constructors
-typeIdentifier :: Parser Text
-typeIdentifier = pack <$> ((:) <$> upper <*> many alphaNum)
 
 -- Type Parsers
 
 pType :: Parser Type
 pType =
-  try funType
-    <|> try recordType
+  funType
+    <|> recordType
     <|> listType
     <|> simpleType
+    <|> (TNamedType <$> typeIdentifier)
 
 funType :: Parser Type
 funType = do
   argTypes <- parens (commaSep pType)
-  _ <- many whiteSpace
-  _ <- string "->"
-  _ <- many whiteSpace
+  _ <- rArrow
   returnType <- pType
   return $ TFun argTypes returnType
 
@@ -150,7 +132,7 @@ recordType = do
 fieldDecl :: Parser (Text, Type)
 fieldDecl = do
   fieldName <- identifier
-  _ <- many whiteSpace >> char ':' >> many whiteSpace
+  _ <- colon
   fieldType <- pType
   return (fieldName, fieldType)
 
@@ -159,20 +141,19 @@ listType = TList <$> brackets pType
 
 simpleType :: Parser Type
 simpleType =
-  (TInt <$ string "Int")
-    <|> (TFloat <$ string "Float")
-    <|> (TChar <$ string "Char")
-    <|> (TString <$ string "String")
-    <|> (TNamedType <$> typeIdentifier)
+  (TInt <$ symbol "Int")
+    <|> (TFloat <$ symbol "Float")
+    <|> (TChar <$ symbol "Char")
+    <|> (TString <$ symbol "String")
 
 -- Expression Parsers
 
 expression :: Parser Expr
 expression =
-  try caseExpr
-    <|> lambdaExpr
+  caseExpr
+    <|> try lambdaExpr
     <|> constructorExpr
-    <|> appExpr
+    <|> try appExpr
     -- <|> binaryExpr
     <|> recordExpr
     <|> simpleExpr
@@ -180,35 +161,28 @@ expression =
 lambdaExpr :: Parser Expr
 lambdaExpr = do
   params <- parens (commaSep identifier)
-  _ <- many whiteSpace
-  _ <- string "=>"
-  _ <- many whiteSpace
+  _ <- fatArrow
   body <- braces expression
   return $ ELambda params body
 
 constructorExpr :: Parser Expr
 constructorExpr = do
   name <- typeIdentifier
-  _ <- many whiteSpace
   args <- option [] $ parens (commaSep expression)
   return $ EConstructor name args
 
 caseExpr :: Parser Expr
 caseExpr = do
-  _ <- string "case"
-  _ <- many1 whiteSpace
+  _ <- reserved "case"
   expr <- expression
-  _ <- many1 whiteSpace
-  _ <- string "of" >> many whiteSpace >> newline
-  cases <- (many whiteSpace *> caseBranch <* many whiteSpace) `sepBy` newline
+  _ <- reserved "of"
+  cases <- many1 caseBranch
   return $ ECase expr cases
 
 caseBranch :: Parser (Pattern, Expr)
 caseBranch = do
   pat <- pattern
-  _ <- many whiteSpace
-  _ <- string "->"
-  _ <- many whiteSpace
+  _ <- rArrow
   expr <- expression
   return (pat, expr)
 
@@ -233,16 +207,16 @@ recordExpr = do
 recordFieldExpr :: Parser (Text, Expr)
 recordFieldExpr = do
   name <- identifier
-  _ <- many whiteSpace >> char ':' >> many whiteSpace
+  _ <- colon
   value <- expression
   return (name, value)
 
 operator :: Parser Operator
 operator =
-  (Add <$ char '+')
-    <|> (Sub <$ char '-')
-    <|> (Mul <$ char '*')
-    <|> (Div <$ char '/')
+  (Add <$ plus)
+    <|> (Sub <$ minus)
+    <|> (Mul <$ star)
+    <|> (Div <$ slash)
 
 simpleExpr :: Parser Expr
 simpleExpr =
@@ -265,7 +239,7 @@ pattern =
     <|> recordPattern
     <|> listPattern
     <|> literalPattern
-    <|> char '_' $> PDiscard
+    <|> symbol "_" $> PDiscard
     <|> PVar <$> identifier
 
 constructorPattern :: Parser Pattern
@@ -279,7 +253,7 @@ recordPattern = do
   fields <- braces (commaSep fieldPattern)
   return $ PRecord fields
 
--- TODO: revisit
+-- TODO: We need a cons operator or similar
 listPattern :: Parser Pattern
 listPattern = do
   pats <- brackets (commaSep pattern)
@@ -291,47 +265,100 @@ literalPattern = PLiteral <$> literal
 fieldPattern :: Parser (Text, Pattern)
 fieldPattern = do
   name <- identifier
-  _ <- many1 whiteSpace
-  _ <- char ':'
-  _ <- many1 whiteSpace
+  _ <- colon
   pat <- pattern
   return (name, pat)
 
--- Helper Parsers
+-- "Lexer"
+
+mnmlDef :: Tok.GenLanguageDef Text () Identity
+mnmlDef =
+  Tok.LanguageDef
+    { Tok.caseSensitive = True,
+      Tok.opStart = Tok.opLetter mnmlDef,
+      Tok.opLetter = oneOf "+-*/|>=",
+      Tok.commentStart = "",
+      Tok.commentEnd = "",
+      Tok.commentLine = "",
+      Tok.nestedComments = True,
+      Tok.identStart = lower,
+      Tok.identLetter = alphaNum <|> char '_',
+      Tok.reservedOpNames = ["+", "-", "*", "/", "|>", "=", "==", "|"],
+      Tok.reservedNames = ["alias", "case", "of", "not", "and", "or"]
+    }
+
+lexer :: Tok.GenTokenParser Text () Identity
+lexer = Tok.makeTokenParser mnmlDef
+
+identifier :: Parser Text
+identifier = pack <$> Tok.identifier lexer
+
+-- Slight misnomer; also applies to constructors
+typeIdentifier :: Parser Text
+typeIdentifier = (Data.Text.cons <$> upper) <*> identifier
 
 integer :: Parser Integer
-integer = read <$> many1 digit
+integer = Tok.integer lexer
 
 float :: Parser Double
-float = do
-  intPart <- many1 digit
-  _ <- char '.'
-  fracPart <- many1 digit
-  return $ read (intPart ++ "." ++ fracPart)
+float = Tok.float lexer
 
 charLiteral :: Parser Char
-charLiteral = between (char '\'') (char '\'') anyChar
+charLiteral = Tok.charLiteral lexer
 
 stringLiteral :: Parser Text
-stringLiteral = between (char '"') (char '"') (pack <$> many (noneOf "\""))
+stringLiteral = pack <$> Tok.stringLiteral lexer
+
+reserved :: String -> Parser ()
+reserved = Tok.reserved lexer
 
 parens :: Parser a -> Parser a
-parens = between (char '(' >> many whiteSpace) (many whiteSpace >> char ')')
+parens = Tok.parens lexer
 
 braces :: Parser a -> Parser a
-braces = between (char '{' >> many whiteSpace) (many whiteSpace >> char '}')
+braces = Tok.braces lexer
 
 brackets :: Parser a -> Parser a
-brackets = between (char '[' >> many whiteSpace) (many whiteSpace >> char ']')
+brackets = Tok.brackets lexer
 
 commaSep :: Parser a -> Parser [a]
-commaSep p = sepBy p (try (many whiteSpace *> char ',' *> many whiteSpace))
+commaSep = Tok.commaSep lexer
 
-nbsp :: Parser Char
-nbsp = satisfy (\c -> isSpace c && (generalCategory c /= LineSeparator))
+fatArrow :: Parser String
+fatArrow = symbol "=>"
 
--- newline :: Parser Char
--- newline = satisfy (\c ->generalCategory c == LineSeparator)
+rArrow :: Parser String
+rArrow = symbol "->"
 
-whiteSpace :: Parser Char
-whiteSpace = satisfy isSpace
+colon :: Parser String
+colon = Tok.colon lexer
+
+symbol :: String -> Parser String
+symbol = Tok.symbol lexer
+
+equal :: Parser ()
+equal = reservedOp "="
+
+dEqual :: Parser ()
+dEqual = reservedOp "=="
+
+plus :: Parser ()
+plus = reservedOp "+"
+
+minus :: Parser ()
+minus = reservedOp "-"
+
+star :: Parser ()
+star = reservedOp "*"
+
+slash :: Parser ()
+slash = reservedOp "/"
+
+bar :: Parser ()
+bar = reservedOp "|"
+
+reservedOp :: String -> Parser ()
+reservedOp = Tok.reservedOp lexer
+
+whiteSpace :: Parser String
+whiteSpace = many1 space
