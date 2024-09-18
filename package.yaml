@@ -1,14 +1,14 @@
-name:                miniML
-version:             0.1.0.0
-github:              "J3RN/miniML"
-license:             BSD-3-Clause
-author:              "Jonathan Arnett"
-maintainer:          "jonathan.arnett@proton.me"
-copyright:           "2024 Jonathan Arnett"
+name: mnml
+version: 0.1.0.0
+github: "J3RN/mnml"
+license: BSD-3-Clause
+author: "Jonathan Arnett"
+maintainer: "jonathan.arnett@proton.me"
+copyright: "2024 Jonathan Arnett"
 
 extra-source-files:
-- README.md
-- CHANGELOG.md
+  - README.md
+  - CHANGELOG.md
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
@@ -17,27 +17,27 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/J3RN/miniML#readme>
+description: Please see the README on GitHub at <https://github.com/J3RN/mnml#readme>
 
 dependencies:
-- base >= 4.7 && < 5
-- containers
-- directory
-- filepath
-- microlens
-- parsec
-- text
+  - base >= 4.7 && < 5
+  - containers
+  - directory
+  - filepath
+  - microlens
+  - parsec
+  - text
 
 ghc-options:
-- -Wall
-- -Wcompat
-- -Widentities
-- -Wincomplete-record-updates
-- -Wincomplete-uni-patterns
-- -Wmissing-export-lists
-- -Wmissing-home-modules
-- -Wpartial-fields
-- -Wredundant-constraints
+  - -Wall
+  - -Wcompat
+  - -Widentities
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wmissing-export-lists
+  - -Wmissing-home-modules
+  - -Wpartial-fields
+  - -Wredundant-constraints
 
 library:
   source-dirs: src
@@ -49,15 +49,15 @@ library:
     - TupleSections
 
 executables:
-  miniML-exe:
-    main:                Main.hs
-    source-dirs:         app
+  mnml-exe:
+    main: Main.hs
+    source-dirs: app
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
     dependencies:
-    - miniML
+      - mnml
     default-extensions:
       - DisambiguateRecordFields
       - LambdaCase
@@ -66,16 +66,16 @@ executables:
       - TupleSections
 
 tests:
-  miniML-test:
-    main:                Spec.hs
-    source-dirs:         test
+  mnml-test:
+    main: Spec.hs
+    source-dirs: test
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
     dependencies:
-    - miniML
-    - hspec
-    - hspec-contrib
+      - mnml
+      - hspec
+      - hspec-contrib
     default-extensions:
-    - OverloadedStrings
+      - OverloadedStrings

@@ -4,11 +4,11 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 
-name:           miniML
+name:           mnml
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/J3RN/miniML#readme>
-homepage:       https://github.com/J3RN/miniML#readme
-bug-reports:    https://github.com/J3RN/miniML/issues
+description:    Please see the README on GitHub at <https://github.com/J3RN/mnml#readme>
+homepage:       https://github.com/J3RN/mnml#readme
+bug-reports:    https://github.com/J3RN/mnml/issues
 author:         Jonathan Arnett
 maintainer:     jonathan.arnett@proton.me
 copyright:      2024 Jonathan Arnett
@@ -21,16 +21,16 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/J3RN/miniML
+  location: https://github.com/J3RN/mnml
 
 library
   exposed-modules:
       Inference
       Parser
   other-modules:
-      Paths_miniML
+      Paths_mnml
   autogen-modules:
-      Paths_miniML
+      Paths_mnml
   hs-source-dirs:
       src
   default-extensions:
@@ -50,12 +50,12 @@ library
     , text
   default-language: Haskell2010
 
-executable miniML-exe
+executable mnml-exe
   main-is: Main.hs
   other-modules:
-      Paths_miniML
+      Paths_mnml
   autogen-modules:
-      Paths_miniML
+      Paths_mnml
   hs-source-dirs:
       app
   default-extensions:
@@ -71,19 +71,19 @@ executable miniML-exe
     , directory
     , filepath
     , microlens
-    , miniML
+    , mnml
     , parsec
     , text
   default-language: Haskell2010
 
-test-suite miniML-test
+test-suite mnml-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
       ParserSpec
-      Paths_miniML
+      Paths_mnml
   autogen-modules:
-      Paths_miniML
+      Paths_mnml
   hs-source-dirs:
       test
   default-extensions:
@@ -97,7 +97,7 @@ test-suite miniML-test
     , hspec
     , hspec-contrib
     , microlens
-    , miniML
+    , mnml
     , parsec
     , text
   default-language: Haskell2010
