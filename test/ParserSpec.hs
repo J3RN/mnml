@@ -46,3 +46,23 @@ spec =
                     ]
                 )
             ]
+
+    describe "binary expressions" $ do
+      it "parses addition" $ do
+        parse' "main = 5 + 3" `shouldBe` Right [ValueDecl "main" (EBinary Add (ELit (LInt 5)) (ELit (LInt 3)))]
+
+      it "does left association" $ do
+        parse' "main = 1 + 2 + 3"
+          `shouldBe` Right [ValueDecl "main" (EBinary Add (EBinary Add (ELit (LInt 1)) (ELit (LInt 2))) (ELit (LInt 3)))]
+
+      it "parses parens correctly" $ do
+        parse' "main = (5 + 3) * 3 == 20 + 4"
+          `shouldBe` Right
+            [ ValueDecl
+                "main"
+                ( EBinary
+                    Equals
+                    (EBinary Mul (EBinary Add (ELit (LInt 5)) (ELit (LInt 3))) (ELit (LInt 3)))
+                    (EBinary Add (ELit (LInt 20)) (ELit (LInt 4)))
+                )
+            ]

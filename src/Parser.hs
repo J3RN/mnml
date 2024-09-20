@@ -2,6 +2,7 @@ module Parser
     ( Declaration (..)
     , Expr (..)
     , Literal (..)
+    , Operator (..)
     , Parser.parse
     , Pattern (..)
     , Type (..)
@@ -41,7 +42,7 @@ data Expr
   | ELambda [Text] Expr -- ["x", "y"] -> EBinary (EVar "x") Add (EVar "y")
   | EApp Expr [Expr] -- (EVar "fun") [(EVar "x"), (EVar "y")]
   | ECase Expr [(Pattern, Expr)]
-  | EBinary Expr Operator Expr
+  | EBinary Operator Expr Expr
   | EConstructor Text [Expr]
   | ERecord [(Text, Expr)]
   | EList [Expr]
@@ -63,7 +64,7 @@ data Pattern
   | PLiteral Literal
   deriving (Eq, Show)
 
-data Operator = Add | Sub | Mul | Div | Pipe | And | Or
+data Operator = Add | Sub | Mul | Div | And | Or | Equals
   deriving (Eq, Show)
 
 -- Client API
@@ -154,7 +155,7 @@ expression =
     <|> try lambdaExpr
     <|> constructorExpr
     <|> try appExpr
-    -- <|> binaryExpr
+    <|> binaryExpr
     <|> recordExpr
     <|> simpleExpr
 
@@ -192,13 +193,21 @@ appExpr = do
   args <- parens (commaSep expression)
   return $ EApp (EVar func) args
 
--- TODO: Totally overhaul
--- binaryExpr :: Parser Expr
--- binaryExpr = do
---     left <- simpleExpr
---     op <- operator
---     right <- simpleExpr
---     return (EBinary left op right)
+binaryExpr :: Parser Expr
+binaryExpr =
+  chainl1 boolExpr (EBinary <$> (Equals <$ dEqual))
+
+boolExpr :: Parser Expr
+boolExpr =
+  chainl1 termExpr (EBinary <$> ((And <$ reserved "and") <|> (Or <$ reserved "or")))
+
+termExpr :: Parser Expr
+termExpr =
+  chainl1 factorExpr (EBinary <$> ((Add <$ plus) <|> (Sub <$ minus)))
+
+factorExpr :: Parser Expr
+factorExpr =
+  chainl1 simpleExpr (EBinary <$> ((Mul <$ star) <|> (Div <$ slash)))
 
 recordExpr :: Parser Expr
 recordExpr = do
@@ -210,13 +219,6 @@ recordFieldExpr = do
   _ <- colon
   value <- expression
   return (name, value)
-
-operator :: Parser Operator
-operator =
-  (Add <$ plus)
-    <|> (Sub <$ minus)
-    <|> (Mul <$ star)
-    <|> (Div <$ slash)
 
 simpleExpr :: Parser Expr
 simpleExpr =
