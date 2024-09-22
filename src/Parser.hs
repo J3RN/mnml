@@ -38,12 +38,12 @@ data Type
 
 data Expr
   = EVar Text
+  | EConstructor Text
   | ELit Literal
   | ELambda [Text] Expr -- ["x", "y"] -> EBinary (EVar "x") Add (EVar "y")
   | EApp Expr [Expr] -- (EVar "fun") [(EVar "x"), (EVar "y")]
   | ECase Expr [(Pattern, Expr)]
   | EBinary Operator Expr Expr
-  | EConstructor Text [Expr]
   | ERecord [(Text, Expr)]
   | EList [Expr]
   deriving (Eq, Show)
@@ -161,9 +161,9 @@ primaryExpr =
   caseExpr
     -- lambda and generalized parens both start with open paren
     <|> try lambdaExpr
-    <|> constructorExpr
     <|> recordExpr
     <|> EVar <$> identifier
+    <|> EConstructor <$> typeIdentifier
     <|> ELit <$> literal
     <|> parens expression
 
@@ -173,12 +173,6 @@ lambdaExpr = do
   _ <- fatArrow
   body <- braces expression
   return $ ELambda params body
-
-constructorExpr :: Parser Expr
-constructorExpr = do
-  name <- typeIdentifier
-  args <- option [] $ parens (commaSep expression)
-  return $ EConstructor name args
 
 caseExpr :: Parser Expr
 caseExpr = do

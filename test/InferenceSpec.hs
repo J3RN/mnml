@@ -3,7 +3,7 @@ module InferenceSpec
     ) where
 
 import qualified Data.Map   as Map
-import           Data.Text  (Text)
+import           Data.Text  (Text, unlines)
 import           Inference  (infer)
 import           Parser     (Type (..))
 import           Test.Hspec
@@ -30,3 +30,44 @@ spec =
     describe "records" $ do
       it "infers records" $ do
         infer' "main = {name: \"Jon\"}" "main" `shouldBe` Right (TRecord [("name", TString)])
+
+    describe "constructors" $ do
+      it "infers a bare constructor" $ do
+        infer'
+          ( Data.Text.unlines
+              [ "MaybeInt = Just(Int) | Nothing",
+                "main = Nothing"
+              ]
+          )
+          "main"
+          `shouldBe` Right (TNamedType "MaybeInt")
+
+      it "infers a parameterized constructor without application" $ do
+        infer'
+          ( Data.Text.unlines
+              [ "MaybeInt = Just(Int) | Nothing",
+                "main = Just"
+              ]
+          )
+          "main"
+          `shouldBe` Right (TFun [TInt] (TNamedType "MaybeInt"))
+
+      it "infers an applied parameterized constructor" $ do
+        infer'
+          ( Data.Text.unlines
+              [ "MaybeInt = Just(Int) | Nothing",
+                "main = Just(5)"
+              ]
+          )
+          "main"
+          `shouldBe` Right (TNamedType "MaybeInt")
+
+      it "doesn't comprehend parens on bare constructor" $ do
+        infer'
+          ( Data.Text.unlines
+              [ "MaybeInt = Just(Int) | Nothing",
+                "main = Nothing()"
+              ]
+          )
+          "main"
+          `shouldBe` Left "TNamedType \"MaybeInt\" is not a function"

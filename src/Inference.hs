@@ -3,6 +3,7 @@ module Inference
     ) where
 
 import           Data.Bifunctor (first)
+import           Data.List      (find)
 import qualified Data.Map       as Map
 import           Data.Maybe
 import           Data.Text      (Text, pack)
@@ -45,16 +46,18 @@ inferFromExpr context (EVar name) =
     (Left (mconcat ["Variable ", name, " not found."]))
     Right
     ((Map.!?) (_bindings context) name)
-inferFromExpr context (EConstructor name _args) = constructorType (_modules context) (_modName context) name
+inferFromExpr context (EConstructor name) = constructorType (_modules context) (_modName context) name
 inferFromExpr _context (ELit literal) = Right (litType literal)
 -- TODO: We need to be able to refine arg types...
 inferFromExpr context (ELambda argNames body) =
   let scopedContext = addBindings context argNames
    in inferFromExpr scopedContext body
 inferFromExpr context (EApp funExpr _args) =
-   inferFromExpr context funExpr >>= (\case
-                                         (TFun _args ret) -> Right ret
-                                         expr -> Left (mconcat [pack . show $ expr, " is not a function"]))
+  inferFromExpr context funExpr
+    >>= ( \case
+            (TFun _args ret) -> Right ret
+            expr -> Left (mconcat [pack . show $ expr, " is not a function"])
+        )
 inferFromExpr context (ECase _ branches) = maybe (Right TGeneric) (inferFromExpr context . snd) (listToMaybe branches)
 inferFromExpr _context (EBinary _ _ _) = Right TInt
 inferFromExpr context (ERecord fields) = buildRecType context fields
@@ -89,15 +92,19 @@ constructorType modules modName constructorName = do
 
 findConstructorType :: [Declaration] -> Text -> Maybe Type
 findConstructorType modu constructorName =
-  TNamedType
-    <$> listToMaybe
-      ( mapMaybe
-          ( \case
-              (TypeDecl name constructors) | constructorName `elem` map fst constructors -> (Just name)
-              _ -> Nothing
-          )
-          modu
-      )
+  listToMaybe
+    ( mapMaybe
+        ( \case
+            (TypeDecl name constructors) ->
+              ( \case
+                  (_, []) -> TNamedType name
+                  (_, args) -> TFun args (TNamedType name)
+              )
+                <$> find ((constructorName ==) . fst) constructors
+            _ -> Nothing
+        )
+        modu
+    )
 
 loadValueDef :: Modules -> Text -> Text -> Either Text Expr
 loadValueDef modules modName valueName = do
