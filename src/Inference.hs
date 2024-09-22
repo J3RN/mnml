@@ -52,17 +52,9 @@ inferFromExpr context (ELambda argNames body) =
   let scopedContext = addBindings context argNames
    in inferFromExpr scopedContext body
 inferFromExpr context (EApp funExpr _args) =
-  case funExpr of
-    lambda@(ELambda _ _) -> inferFromExpr context lambda
-    EVar funName ->
-      case (Map.!?) (_bindings context) funName of
-        Just var ->
-          ( case var of
-              (TFun _args ret) -> Right ret
-              t -> Left (mconcat [funName, " is not a function, it is ", pack . show $ t])
-          )
-        Nothing -> loadValueDef (_modules context) (_modName context) funName >>= inferFromExpr context
-    expr -> Left (mconcat [pack . show $ expr, " is not a function"])
+   inferFromExpr context funExpr >>= (\case
+                                         (TFun _args ret) -> Right ret
+                                         expr -> Left (mconcat [pack . show $ expr, " is not a function"]))
 inferFromExpr context (ECase _ branches) = maybe (Right TGeneric) (inferFromExpr context . snd) (listToMaybe branches)
 inferFromExpr _context (EBinary _ _ _) = Right TInt
 inferFromExpr context (ERecord fields) = buildRecType context fields

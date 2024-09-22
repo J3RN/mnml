@@ -150,14 +150,22 @@ simpleType =
 -- Expression Parsers
 
 expression :: Parser Expr
-expression =
+expression = try binaryExpr <|> unaryExpr
+
+unaryExpr :: Parser Expr
+unaryExpr = try appExpr <|> primaryExpr
+
+-- Any expression that is not an application
+primaryExpr :: Parser Expr
+primaryExpr =
   caseExpr
+    -- lambda and generalized parens both start with open paren
     <|> try lambdaExpr
     <|> constructorExpr
-    <|> try appExpr
-    <|> binaryExpr
     <|> recordExpr
-    <|> simpleExpr
+    <|> EVar <$> identifier
+    <|> ELit <$> literal
+    <|> parens expression
 
 lambdaExpr :: Parser Expr
 lambdaExpr = do
@@ -189,9 +197,9 @@ caseBranch = do
 
 appExpr :: Parser Expr
 appExpr = do
-  func <- identifier
-  args <- parens (commaSep expression)
-  return $ EApp (EVar func) args
+  func <- primaryExpr
+  apps <- many1 (parens (commaSep expression))
+  return $ Prelude.foldl EApp func apps
 
 binaryExpr :: Parser Expr
 binaryExpr =
@@ -207,7 +215,7 @@ termExpr =
 
 factorExpr :: Parser Expr
 factorExpr =
-  chainl1 simpleExpr (EBinary <$> ((Mul <$ star) <|> (Div <$ slash)))
+  chainl1 unaryExpr (EBinary <$> ((Mul <$ star) <|> (Div <$ slash)))
 
 recordExpr :: Parser Expr
 recordExpr = do
@@ -219,12 +227,6 @@ recordFieldExpr = do
   _ <- colon
   value <- expression
   return (name, value)
-
-simpleExpr :: Parser Expr
-simpleExpr =
-  EVar <$> identifier
-    <|> ELit <$> literal
-    <|> parens expression
 
 literal :: Parser Literal
 literal =

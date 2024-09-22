@@ -4,9 +4,10 @@ module ParserSpec
 
 import           Data.Bifunctor (first)
 import           Data.Text      (Text, pack, unlines)
--- import           Text.Parsec (ParseError)
 import           Parser
 import           Test.Hspec
+
+-- import           Text.Parsec (ParseError)
 
 parse' :: Text -> Either Text [Declaration]
 parse' = first (pack . show) <$> parse "test.mnml"
@@ -70,3 +71,10 @@ spec =
                     (EBinary Add (ELit (LInt 20)) (ELit (LInt 4)))
                 )
             ]
+
+    describe "function application" $ do
+      it "handles single application" $ do
+        parse' "main = foo(1)" `shouldBe` Right [ValueDecl "main" (EApp (EVar "foo") [ELit (LInt 1)])]
+
+      it "handles chained applications" $ do
+        parse' "main = foo(1)(2)" `shouldBe` Right [ValueDecl "main" (EApp (EApp (EVar "foo") [ELit (LInt 1)]) [ELit (LInt 2)])]
