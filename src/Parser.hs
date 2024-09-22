@@ -299,7 +299,7 @@ identifier = pack <$> Tok.identifier lexer
 
 -- Slight misnomer; also applies to constructors
 typeIdentifier :: Parser Text
-typeIdentifier = (Data.Text.cons <$> upper) <*> identifier
+typeIdentifier = Tok.lexeme lexer (Data.Text.cons <$> upper <*> (Data.Text.pack <$> many (alphaNum <|> char '_')))
 
 integer :: Parser Integer
 integer = Tok.integer lexer
