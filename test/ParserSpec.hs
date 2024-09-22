@@ -27,6 +27,10 @@ spec =
         parse' "main = BinOp(1, '*', 2)"
           `shouldBe` Right [ValueDecl "main" (EConstructor "BinOp" [ELit (LInt 1), ELit (LChar '*'), ELit (LInt 2)])]
 
+    describe "records" $ do
+      it "parses single" $ do
+        parse' "main = {name: \"Jon\"}" `shouldBe` Right [ValueDecl "main" (ERecord [("name", ELit (LString "Jon"))])]
+
     describe "case" $ do
       it "handles constructors" $ do
         parse'
