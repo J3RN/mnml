@@ -45,6 +45,7 @@ inferFromExpr context (EVar name) =
     (Left (mconcat ["Variable ", name, " not found."]))
     Right
     ((Map.!?) (_bindings context) name)
+inferFromExpr context (EConstructor name _args) = constructorType (_modules context) (_modName context) name
 inferFromExpr _context (ELit literal) = Right (litType literal)
 -- TODO: We need to be able to refine arg types...
 inferFromExpr context (ELambda argNames body) =
@@ -85,6 +86,26 @@ buildRecType context fields =
           (,) name <$> inferFromExpr context expr
       )
       fields
+
+constructorType :: Modules -> Text -> Text -> Either Text Type
+constructorType modules modName constructorName = do
+  -- TODO: Check cache, have a cache, etc
+  ast <- loadModuleAst modules modName
+  case findConstructorType ast constructorName of
+    Just expr -> Right expr
+    Nothing -> Left (mconcat ["Constructor '", modName, ".", constructorName, "' not found"])
+
+findConstructorType :: [Declaration] -> Text -> Maybe Type
+findConstructorType modu constructorName =
+  TNamedType
+    <$> listToMaybe
+      ( mapMaybe
+          ( \case
+              (TypeDecl name constructors) | constructorName `elem` map fst constructors -> (Just name)
+              _ -> Nothing
+          )
+          modu
+      )
 
 loadValueDef :: Modules -> Text -> Text -> Either Text Expr
 loadValueDef modules modName valueName = do
