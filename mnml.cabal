@@ -80,6 +80,7 @@ test-suite mnml-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      InferenceSpec
       ParserSpec
       Paths_mnml
   autogen-modules:

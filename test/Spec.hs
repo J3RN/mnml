@@ -1,3 +1,4 @@
+import qualified InferenceSpec
 import qualified ParserSpec
 import Test.Hspec
 
@@ -7,3 +8,4 @@ main = hspec spec
 spec :: Spec
 spec = do
   ParserSpec.spec
+  InferenceSpec.spec
