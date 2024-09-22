@@ -16,17 +16,17 @@ spec =
   describe "Inference" $ do
     describe "literals" $ do
       it "infers TInt" $ do
-        (infer' "main = 12" "main") `shouldBe` Right TInt
+        infer' "main = 12" "main" `shouldBe` Right TInt
 
       it "infers TFloat" $ do
-        (infer' "main = 1.2" "main") `shouldBe` Right TFloat
+        infer' "main = 1.2" "main" `shouldBe` Right TFloat
 
       it "infers TChar" $ do
-        (infer' "main = 'c'" "main") `shouldBe` Right TChar
+        infer' "main = 'c'" "main" `shouldBe` Right TChar
 
       it "infers TString" $ do
-        (infer' "main = \"hello\"" "main") `shouldBe` Right TString
+        infer' "main = \"hello\"" "main" `shouldBe` Right TString
 
     describe "records" $ do
       it "infers records" $ do
-        (infer' "main = {name: \"Jon\"}" "main") `shouldBe` Right (TRecord [("name", TString)])
+        infer' "main = {name: \"Jon\"}" "main" `shouldBe` Right (TRecord [("name", TString)])
