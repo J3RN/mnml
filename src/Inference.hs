@@ -51,7 +51,7 @@ inferFromExpr _context (ELit literal) = Right (litType literal)
 -- TODO: We need to be able to refine arg types...
 inferFromExpr context (ELambda argNames body) =
   let scopedContext = addBindings context argNames
-   in inferFromExpr scopedContext body
+   in TFun (map (const TGeneric) argNames) <$> inferFromExpr scopedContext body
 inferFromExpr context (EApp funExpr _args) =
   inferFromExpr context funExpr
     >>= ( \case

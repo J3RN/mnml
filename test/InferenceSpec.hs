@@ -71,3 +71,10 @@ spec =
           )
           "main"
           `shouldBe` Left "TNamedType \"MaybeInt\" is not a function"
+
+    describe "functions" $ do
+      it "infers nullary lambdas as functions" $ do
+        infer' "main = () => { 1 }" "main" `shouldBe` Right (TFun [] TInt)
+
+      it "infers parameterized lambdas as functions" $ do
+        infer' "main = (x) => { x + 1 }" "main" `shouldBe` Right (TFun [TInt] TInt)
