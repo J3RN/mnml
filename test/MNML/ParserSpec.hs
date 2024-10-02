@@ -1,13 +1,11 @@
-module ParserSpec
+module MNML.ParserSpec
     ( spec
     ) where
 
 import           Data.Bifunctor (first)
 import           Data.Text      (Text, pack, unlines)
-import           Parser
+import           MNML.Parser
 import           Test.Hspec
-
--- import           Text.Parsec (ParseError)
 
 parse' :: Text -> Either Text [Declaration]
 parse' = first (pack . show) <$> parse "test.mnml"

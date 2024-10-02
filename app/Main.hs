@@ -2,19 +2,22 @@ module Main
     ( main
     ) where
 
-import           Control.Exception (try)
-import           Data.Either       (fromRight)
-import qualified Data.Map          as Map
-import           Data.Text         (Text, pack)
-import qualified Data.Text.IO      as TIO
-import           Inference
-import           System.Directory  (listDirectory)
-import           System.FilePath   (dropExtension, isExtensionOf)
+import           Control.Exception   (try)
+import           Control.Monad.State (evalState)
+import           Data.Either         (fromRight)
+import qualified Data.Map            as Map
+import           Data.Text           (Text, pack)
+import qualified Data.Text.IO        as TIO
+import           MNML                (CompilerState (..))
+import           MNML.Inference
+import           System.Directory    (listDirectory)
+import           System.FilePath     (dropExtension, isExtensionOf)
 
 main :: IO ()
 main = do
   modules <- loadModules "."
-  let result = infer modules "test" "main"
+  let state = (CompilerState {_stateSpans = Map.empty, _stateModules = modules})
+      result = evalState (infer "test" "main") state
   print result
 
 loadModules :: FilePath -> IO (Map.Map Text Text)

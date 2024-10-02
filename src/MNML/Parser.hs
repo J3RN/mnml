@@ -1,10 +1,11 @@
-module Parser
+module MNML.Parser
     ( Declaration (..)
     , Expr (..)
     , Literal (..)
+    , MNML.Parser.parse
     , Operator (..)
-    , Parser.parse
     , Pattern (..)
+    , SourceSpan (..)
     , Type (..)
     ) where
 
@@ -17,6 +18,12 @@ import qualified Text.Parsec.Token     as Tok
 -- Data Types
 
 type Parser = Parsec Text ()
+
+data SourceSpan
+  = SourceSpan
+      { spanStart :: SourcePos
+      , spanEnd   :: SourcePos
+      }
 
 data Declaration
   = TypeDecl Text [(Text, [Type])]
@@ -69,7 +76,7 @@ data Operator = Add | Sub | Mul | Div | And | Or | Equals
 
 -- Client API
 parse :: Text -> Text -> Either ParseError [Declaration]
-parse fName = runParser Parser.mod () (unpack fName)
+parse fName = runParser MNML.Parser.mod () (unpack fName)
 
 -- Top-level Parsers
 mod :: Parser [Declaration]

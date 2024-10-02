@@ -1,5 +1,5 @@
-import qualified InferenceSpec
-import qualified ParserSpec
+import qualified MNML.InferenceSpec as InferenceSpec
+import qualified MNML.ParserSpec as ParserSpec
 import Test.Hspec
 
 main :: IO ()

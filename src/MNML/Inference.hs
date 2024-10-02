@@ -1,24 +1,26 @@
-module Inference
+module MNML.Inference
     ( infer
     ) where
 
-import           Data.Bifunctor (first)
-import           Data.List      (find)
-import qualified Data.Map       as Map
+import           Control.Monad.State (State, get)
+import           Data.Bifunctor      (first)
+import           Data.List           (find)
+import qualified Data.Map            as Map
 import           Data.Maybe
-import           Data.Text      (Text, pack)
-import           Lens.Micro     (Lens', lens, over)
-import           Parser         (Declaration (..), Expr (..), Literal (..),
-                                 Type (..), parse)
+import           Data.Text           (Text, pack)
+import           Lens.Micro          (Lens', lens, over)
+import           MNML                (CompilerState (..))
+import           MNML.Parser         (Declaration (..), Expr (..), Literal (..),
+                                      Type (..), parse)
 
--- TODO: Name bad, fix later
 type Modules = Map.Map Text Text
 
+-- Currently only for variables, maybe more general later
 type Bindings = Map.Map Text Type
 
 data Context
   = Context
-      { _modules   :: Modules
+      { _modules   :: Map.Map Text Text
       , _bindings  :: Bindings
       , _modName   :: Text
       , _valueName :: Text
@@ -28,9 +30,10 @@ bindings :: Lens' Context Bindings
 bindings = lens _bindings (\context newBindings -> context {_bindings = newBindings})
 
 -- Infer the type for a value
-infer :: Modules -> Text -> Text -> Either Text Type
-infer modules modName valueName =
-  loadValueDef modules modName valueName
+infer :: Text -> Text -> State CompilerState (Either Text Type)
+infer modName valueName = do
+  CompilerState { _stateModules = modules } <- get
+  return $ loadValueDef modules modName valueName
     >>= inferFromExpr
       ( Context
           { _modules = modules,
@@ -118,7 +121,7 @@ loadModuleAst :: Modules -> Text -> Either Text [Declaration]
 loadModuleAst modules modName =
   -- TODO: Check cache, have a cache, etc
   case (Map.!?) modules modName of
-    Just text -> first (pack . show) $ Parser.parse modName text
+    Just text -> first (pack . show) $ parse modName text
     Nothing   -> Left (mconcat ["Module '", modName, "' not found"])
 
 findValue :: [Declaration] -> Text -> Maybe Expr

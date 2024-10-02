@@ -1,15 +1,18 @@
-module InferenceSpec
+module MNML.InferenceSpec
     ( spec
     ) where
 
-import qualified Data.Map   as Map
-import           Data.Text  (Text, unlines)
-import           Inference  (infer)
-import           Parser     (Type (..))
+import           Control.Monad.State (evalState)
+import qualified Data.Map            as Map
+import           Data.Text           (Text, unlines)
+import           MNML                (CompilerState (..))
+import           MNML.Inference      (infer)
+import           MNML.Parser         (Type (..))
 import           Test.Hspec
 
 infer' :: Text -> Text -> Either Text Type
-infer' t = infer (Map.fromList [("test", t)]) "test"
+infer' modText var = evalState (infer "test" var) defaultState
+  where defaultState = (CompilerState { _stateSpans = (Map.fromList []), _stateModules =  (Map.fromList [("test", modText)])})
 
 spec :: Spec
 spec =
