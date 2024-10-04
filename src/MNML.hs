@@ -21,6 +21,7 @@ data SourceSpan
       { _spanStart :: SourcePos
       , _spanEnd   :: SourcePos
       }
+      deriving (Show, Eq)
 
 data Type
   = TInt
@@ -58,6 +59,7 @@ data CompilerState
       , _stateModules :: Modules
       , _stateTypes   :: Types
       }
+      deriving (Show, Eq)
 
 stateSpans :: Lens' CompilerState Spans
 stateSpans = lens _stateSpans (\cs ss -> cs {_stateSpans = ss})
