@@ -16,15 +16,15 @@ spec =
     describe "constructor" $ do
       it "parses constructor with no arguments" $ do
         parse' "main = None"
-          `shouldBe` Right [ValueDecl "main" (EConstructor "None")]
+          `shouldBe` Right [ValueDecl "main" (EConstructor "None" 2) 1]
 
       it "parses constructor with one argument" $ do
         parse' "main = Success({ body: \"hello world!\"})"
-          `shouldBe` Right [ValueDecl "main" (EApp (EConstructor "Success") [ERecord [("body", ELit (LString "hello world!"))]])]
+          `shouldBe` Right [ValueDecl "main" (EApp (EConstructor "Success" 3) [ERecord [("body", ELit (LString "hello world!" 6) 5)] 4] 2) 1]
 
       it "parses constructor with multiple arguments" $ do
         parse' "main = BinOp(1, '*', 2)"
-          `shouldBe` Right [ValueDecl "main" (EApp (EConstructor "BinOp") [ELit (LInt 1), ELit (LChar '*'), ELit (LInt 2)])]
+          `shouldBe` Right [ValueDecl "main" (EApp (EConstructor "BinOp") [ELit (LInt 1 4) 3, ELit (LChar '*' 6) 5, ELit (LInt 2 8) 7] 2) 1]
 
     describe "records" $ do
       it "parses single" $ do
