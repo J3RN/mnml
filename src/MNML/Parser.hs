@@ -75,9 +75,9 @@ data Operator
 
 -- Client API
 parse :: Text -> Text -> State CompilerState (Either ParseError [Declaration])
-parse fName asdf = do
+parse fName source = do
   state <- get
-  return $ runParser MNML.Parser.mod ((ParserEnv {nextId = 0}), state) (unpack fName) asdf
+  return $ runParser MNML.Parser.mod ((ParserEnv {nextId = 0}), state) (unpack fName) source
 
 -- Helpers
 
