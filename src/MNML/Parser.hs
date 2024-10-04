@@ -7,27 +7,26 @@ module MNML.Parser
     , parse
     ) where
 
-import           Control.Monad.State   (State, get)
-import           Data.Functor          (($>))
-import           Data.Functor.Identity (Identity)
-import qualified Data.Map              as Map
+import           Control.Monad.State (State, lift, modify)
+import           Data.Functor        (($>))
+import qualified Data.Map            as Map
 import           Data.Text
-import           Lens.Micro            (over)
-import           MNML                  (CompilerState (..), NodeId,
-                                        SourceSpan (..), Type (..), stateSpans)
-import           Text.Parsec           (ParseError, Parsec, alphaNum, chainl1,
-                                        char, eof, getPosition, getState, lower,
-                                        many, many1, manyTill, modifyState,
-                                        oneOf, option, runParser, sepBy1, space,
-                                        try, upper, (<|>))
-import qualified Text.Parsec.Token     as Tok
+import           Lens.Micro          (over)
+import           MNML                (CompilerState (..), NodeId,
+                                      SourceSpan (..), Type (..), stateSpans)
+import           Text.Parsec         (ParseError, ParsecT, alphaNum, chainl1,
+                                      char, eof, getPosition, getState, lower,
+                                      many, many1, manyTill, oneOf, option,
+                                      putState, runParserT, sepBy1, space, try,
+                                      upper, (<|>))
+import qualified Text.Parsec.Token   as Tok
 
 -- Data Types
 
 newtype ParserEnv
   = ParserEnv { nextId :: NodeId }
 
-type Parser = Parsec Text (ParserEnv, CompilerState)
+type Parser = ParsecT Text ParserEnv (State CompilerState)
 
 data Declaration
   = TypeDecl Text [(Text, [Type])] NodeId
@@ -75,9 +74,8 @@ data Operator
 
 -- Client API
 parse :: Text -> Text -> State CompilerState (Either ParseError [Declaration])
-parse fName source = do
-  state <- get
-  return $ runParser MNML.Parser.mod ((ParserEnv {nextId = 0}), state) (unpack fName) source
+parse filename source =
+  runParserT MNML.Parser.mod (ParserEnv {nextId = 0}) (unpack filename) source
 
 -- Helpers
 
@@ -85,14 +83,14 @@ parse fName source = do
 -- counter, and associate the NodeID with the recorded span.
 captureSpan :: Parser (NodeId -> b) -> Parser b
 captureSpan p = do
-  (pe, _) <- getState
+  pe <- getState
+  let nodeId = nextId pe
+  putState (pe {nextId = nodeId + 1})
   start <- getPosition
   node <- p
   end <- getPosition
   let nodeSpan = SourceSpan start end
-      nodeId = nextId pe
-  modifyState (\(e, c) -> (e {nextId = nodeId + 1}
-                          , over stateSpans (Map.insert nodeId nodeSpan) c ))
+  lift $ modify (over stateSpans (Map.insert nodeId nodeSpan))
   return (node nodeId)
 
 -- Top-level Parsers
@@ -143,7 +141,7 @@ pType =
     <|> (TNamedType <$> typeIdentifier)
 
 funType :: Parser Type
-funType =  do
+funType = do
   argTypes <- parens (commaSep pType)
   _ <- rArrow
   returnType <- pType
@@ -162,7 +160,7 @@ fieldDecl = do
   return (fieldName, fieldType)
 
 listType :: Parser Type
-listType =  TList <$> brackets pType
+listType = TList <$> brackets pType
 
 simpleType :: Parser Type
 simpleType =
@@ -236,7 +234,7 @@ factorExpr :: Parser Expr
 factorExpr =
   chainl1 unaryExpr (captureSpan (pure (fanagle EBinary)) <*> captureSpan ((Mul <$ star) <|> (Div <$ slash)))
 
-  -- Name not permanent
+-- Name not permanent
 fanagle :: (b -> a -> a -> NodeId -> a) -> (NodeId -> b -> a -> a -> a)
 fanagle f = (\nodeId a b c -> f a b c nodeId)
 
@@ -252,11 +250,12 @@ recordFieldExpr = do
   return (name, value)
 
 literal :: Parser Literal
-literal = captureSpan $
-  try (LFloat <$> float)
-    <|> (LInt <$> integer)
-    <|> (LChar <$> charLiteral)
-    <|> (LString <$> stringLiteral)
+literal =
+  captureSpan $
+    try (LFloat <$> float)
+      <|> (LInt <$> integer)
+      <|> (LChar <$> charLiteral)
+      <|> (LString <$> stringLiteral)
 
 -- Pattern Parsers
 
@@ -298,7 +297,7 @@ fieldPattern = do
 
 -- "Lexer"
 
-mnmlDef :: Tok.GenLanguageDef Text (ParserEnv, CompilerState) Identity
+mnmlDef :: Tok.GenLanguageDef Text (ParserEnv) (State CompilerState)
 mnmlDef =
   Tok.LanguageDef
     { Tok.caseSensitive = True,
@@ -314,7 +313,7 @@ mnmlDef =
       Tok.reservedNames = ["alias", "case", "of", "not", "and", "or"]
     }
 
-lexer :: Tok.GenTokenParser Text (ParserEnv, CompilerState) Identity
+lexer :: Tok.GenTokenParser Text (ParserEnv) (State CompilerState)
 lexer = Tok.makeTokenParser mnmlDef
 
 identifier :: Parser Text

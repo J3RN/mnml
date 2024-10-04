@@ -21,7 +21,7 @@ data SourceSpan
       { _spanStart :: SourcePos
       , _spanEnd   :: SourcePos
       }
-      deriving (Show, Eq)
+  deriving (Eq, Show)
 
 data Type
   = TInt
@@ -47,10 +47,11 @@ data Type
 --   | TGeneric NodeId -- "a"
 --   deriving (Eq, Show)
 
-
 -- The compiler state, contains various information about terms, etc
 type Modules = Map Text Text
+
 type Spans = Map NodeId SourceSpan
+
 type Types = Map NodeId Type
 
 data CompilerState
@@ -59,7 +60,7 @@ data CompilerState
       , _stateModules :: Modules
       , _stateTypes   :: Types
       }
-      deriving (Show, Eq)
+  deriving (Eq, Show)
 
 stateSpans :: Lens' CompilerState Spans
 stateSpans = lens _stateSpans (\cs ss -> cs {_stateSpans = ss})
