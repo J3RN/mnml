@@ -1,4 +1,4 @@
-import qualified MNML.InferenceSpec as InferenceSpec
+-- import qualified MNML.InferenceSpec as InferenceSpec
 import qualified MNML.ParserSpec as ParserSpec
 import Test.Hspec
 
@@ -8,4 +8,4 @@ main = hspec spec
 spec :: Spec
 spec = do
   ParserSpec.spec
-  InferenceSpec.spec
+  -- InferenceSpec.spec

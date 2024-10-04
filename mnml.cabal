@@ -26,7 +26,6 @@ source-repository head
 library
   exposed-modules:
       MNML
-      MNML.Inference
       MNML.Parser
   other-modules:
       Paths_mnml
@@ -83,7 +82,6 @@ test-suite mnml-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      MNML.InferenceSpec
       MNML.ParserSpec
       Paths_mnml
   autogen-modules:

@@ -9,7 +9,7 @@ import qualified Data.Map            as Map
 import           Data.Text           (Text, pack)
 import qualified Data.Text.IO        as TIO
 import           MNML                (CompilerState (..))
-import           MNML.Inference
+-- import           MNML.Inference
 import           System.Directory    (listDirectory)
 import           System.FilePath     (dropExtension, isExtensionOf)
 
@@ -17,8 +17,9 @@ main :: IO ()
 main = do
   modules <- loadModules "."
   let state = (CompilerState {_stateSpans = Map.empty, _stateModules = modules})
-      result = evalState (infer "test" "main") state
-  print result
+      -- result = evalState (infer "test" "main") state
+  -- print result
+  pure ()
 
 loadModules :: FilePath -> IO (Map.Map Text Text)
 loadModules basePath = do
