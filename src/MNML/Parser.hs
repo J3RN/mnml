@@ -2,81 +2,98 @@ module MNML.Parser
     ( Declaration (..)
     , Expr (..)
     , Literal (..)
-    , MNML.Parser.parse
     , Operator (..)
     , Pattern (..)
-    , SourceSpan (..)
-    , Type (..)
+    , parse
     ) where
 
+import           Control.Monad.State   (State, get)
 import           Data.Functor          (($>))
 import           Data.Functor.Identity (Identity)
+import qualified Data.Map              as Map
 import           Data.Text
-import           Text.Parsec
+import           Lens.Micro            (over)
+import           MNML                  (CompilerState (..), NodeId,
+                                        SourceSpan (..), Type (..), stateSpans)
+import           Text.Parsec           (ParseError, Parsec, alphaNum, chainl1,
+                                        char, eof, getPosition, getState, lower,
+                                        many, many1, manyTill, modifyState,
+                                        oneOf, option, runParser, sepBy1, space,
+                                        try, upper, (<|>))
 import qualified Text.Parsec.Token     as Tok
 
 -- Data Types
 
-type Parser = Parsec Text ()
+newtype ParserEnv
+  = ParserEnv { nextId :: NodeId }
 
-data SourceSpan
-  = SourceSpan
-      { spanStart :: SourcePos
-      , spanEnd   :: SourcePos
-      }
+type Parser = Parsec Text (ParserEnv, CompilerState)
 
 data Declaration
-  = TypeDecl Text [(Text, [Type])]
-  | TypeAliasDecl Text [(Text, Type)]
-  | ValueDecl Text Expr
-  deriving (Eq, Show)
-
-data Type
-  = TInt
-  | TFloat
-  | TChar
-  | TString
-  | TNamedType Text -- "User"
-  | TList Type -- TInt
-  | TFun [Type] Type -- [TInt, TInt] -> TInt
-  | TRecord [(Text, Type)] -- [("name", TString), ...]
-  | TGeneric -- "a"
+  = TypeDecl Text [(Text, [Type])] NodeId
+  | TypeAliasDecl Text [(Text, Type)] NodeId
+  | ValueDecl Text Expr NodeId
   deriving (Eq, Show)
 
 data Expr
-  = EVar Text
-  | EConstructor Text
-  | ELit Literal
-  | ELambda [Text] Expr -- ["x", "y"] -> EBinary (EVar "x") Add (EVar "y")
-  | EApp Expr [Expr] -- (EVar "fun") [(EVar "x"), (EVar "y")]
-  | ECase Expr [(Pattern, Expr)]
-  | EBinary Operator Expr Expr
-  | ERecord [(Text, Expr)]
-  | EList [Expr]
+  = EVar Text NodeId
+  | EConstructor Text NodeId
+  | ELit Literal NodeId
+  | ELambda [Text] Expr NodeId -- ["x", "y"] -> EBinary (EVar "x") Add (EVar "y")
+  | EApp Expr [Expr] NodeId -- (EVar "fun") [(EVar "x"), (EVar "y")]
+  | ECase Expr [(Pattern, Expr)] NodeId
+  | EBinary Operator Expr Expr NodeId
+  | ERecord [(Text, Expr)] NodeId
+  | EList [Expr] NodeId
   deriving (Eq, Show)
 
 data Literal
-  = LInt Integer
-  | LFloat Double
-  | LChar Char
-  | LString Text
+  = LInt Integer NodeId
+  | LFloat Double NodeId
+  | LChar Char NodeId
+  | LString Text NodeId
   deriving (Eq, Show)
 
 data Pattern
-  = PVar Text
-  | PDiscard -- _
-  | PConstructor Text [Pattern]
-  | PRecord [(Text, Pattern)]
-  | PList [Pattern]
-  | PLiteral Literal
+  = PVar Text NodeId
+  | PDiscard NodeId -- _
+  | PConstructor Text [Pattern] NodeId
+  | PRecord [(Text, Pattern)] NodeId
+  | PList [Pattern] NodeId
+  | PLiteral Literal NodeId
   deriving (Eq, Show)
 
-data Operator = Add | Sub | Mul | Div | And | Or | Equals
+data Operator
+  = Add NodeId
+  | Sub NodeId
+  | Mul NodeId
+  | Div NodeId
+  | And NodeId
+  | Or NodeId
+  | Equals NodeId
   deriving (Eq, Show)
 
 -- Client API
-parse :: Text -> Text -> Either ParseError [Declaration]
-parse fName = runParser MNML.Parser.mod () (unpack fName)
+parse :: Text -> Text -> State CompilerState (Either ParseError [Declaration])
+parse fName asdf = do
+  state <- get
+  return $ runParser MNML.Parser.mod ((ParserEnv {nextId = 0}), state) (unpack fName) asdf
+
+-- Helpers
+
+-- This function needs to record the span of p, retrieve the next NodeID, increment the node
+-- counter, and associate the NodeID with the recorded span.
+captureSpan :: Parser (NodeId -> b) -> Parser b
+captureSpan p = do
+  (pe, _) <- getState
+  start <- getPosition
+  node <- p
+  end <- getPosition
+  let nodeSpan = SourceSpan start end
+      nodeId = nextId pe
+  modifyState (\(e, c) -> (e {nextId = nodeId + 1}
+                          , over stateSpans (Map.insert nodeId nodeSpan) c ))
+  return (node nodeId)
 
 -- Top-level Parsers
 mod :: Parser [Declaration]
@@ -88,7 +105,7 @@ decl :: Parser Declaration
 decl = typeDecl <|> typeAliasDecl <|> valueDecl
 
 typeDecl :: Parser Declaration
-typeDecl = do
+typeDecl = captureSpan $ do
   name <- typeIdentifier
   _ <- equal
   constructors <- sepBy1 constructor bar
@@ -101,7 +118,7 @@ constructor = do
   return (name, cData)
 
 typeAliasDecl :: Parser Declaration
-typeAliasDecl = do
+typeAliasDecl = captureSpan $ do
   _ <- reserved "alias"
   name <- typeIdentifier
   _ <- equal
@@ -109,7 +126,7 @@ typeAliasDecl = do
   return $ TypeAliasDecl name fields
 
 valueDecl :: Parser Declaration
-valueDecl = do
+valueDecl = captureSpan $ do
   name <- identifier
   _ <- equal
   expr <- expression
@@ -123,17 +140,17 @@ pType =
     <|> recordType
     <|> listType
     <|> simpleType
-    <|> (TNamedType <$> typeIdentifier)
+    <|> captureSpan (TNamedType <$> typeIdentifier)
 
 funType :: Parser Type
-funType = do
+funType = captureSpan $ do
   argTypes <- parens (commaSep pType)
   _ <- rArrow
   returnType <- pType
   return $ TFun argTypes returnType
 
 recordType :: Parser Type
-recordType = do
+recordType = captureSpan $ do
   fields <- braces (commaSep fieldDecl)
   return $ TRecord fields
 
@@ -145,10 +162,10 @@ fieldDecl = do
   return (fieldName, fieldType)
 
 listType :: Parser Type
-listType = TList <$> brackets pType
+listType = captureSpan $ TList <$> brackets pType
 
 simpleType :: Parser Type
-simpleType =
+simpleType = captureSpan $
   (TInt <$ symbol "Int")
     <|> (TFloat <$ symbol "Float")
     <|> (TChar <$ symbol "Char")
@@ -160,7 +177,8 @@ expression :: Parser Expr
 expression = try binaryExpr <|> unaryExpr
 
 unaryExpr :: Parser Expr
-unaryExpr = try appExpr <|> primaryExpr
+-- unaryExpr = try appExpr <|> primaryExpr
+unaryExpr = primaryExpr
 
 -- Any expression that is not an application
 primaryExpr :: Parser Expr
@@ -169,20 +187,20 @@ primaryExpr =
     -- lambda and generalized parens both start with open paren
     <|> try lambdaExpr
     <|> recordExpr
-    <|> EVar <$> identifier
-    <|> EConstructor <$> typeIdentifier
-    <|> ELit <$> literal
+    <|> captureSpan (EVar <$> identifier)
+    <|> captureSpan (EConstructor <$> typeIdentifier)
+    <|> captureSpan (ELit <$> literal)
     <|> parens expression
 
 lambdaExpr :: Parser Expr
-lambdaExpr = do
+lambdaExpr = captureSpan $ do
   params <- parens (commaSep identifier)
   _ <- fatArrow
   body <- braces expression
   return $ ELambda params body
 
 caseExpr :: Parser Expr
-caseExpr = do
+caseExpr = captureSpan $ do
   _ <- reserved "case"
   expr <- expression
   _ <- reserved "of"
@@ -196,31 +214,35 @@ caseBranch = do
   expr <- expression
   return (pat, expr)
 
-appExpr :: Parser Expr
-appExpr = do
-  func <- primaryExpr
-  apps <- many1 (parens (commaSep expression))
-  return $ Prelude.foldl EApp func apps
+-- appExpr :: Parser Expr
+-- appExpr = do
+--   func <- primaryExpr
+--   apps <- many1 (parens (commaSep expression))
+--   return $ Prelude.foldl EApp func apps
 
 binaryExpr :: Parser Expr
 binaryExpr =
-  chainl1 boolExpr (EBinary <$> (Equals <$ dEqual))
+  chainl1 boolExpr (captureSpan (pure (fanagle EBinary)) <*> captureSpan (Equals <$ dEqual))
 
 boolExpr :: Parser Expr
 boolExpr =
-  chainl1 termExpr (EBinary <$> ((And <$ reserved "and") <|> (Or <$ reserved "or")))
+  chainl1 termExpr (captureSpan (pure (fanagle EBinary)) <*> captureSpan ((And <$ reserved "and") <|> (Or <$ reserved "or")))
 
 termExpr :: Parser Expr
 termExpr =
-  chainl1 factorExpr (EBinary <$> ((Add <$ plus) <|> (Sub <$ minus)))
+  chainl1 factorExpr (captureSpan (pure (fanagle EBinary)) <*> captureSpan ((Add <$ plus) <|> (Sub <$ minus)))
 
 factorExpr :: Parser Expr
 factorExpr =
-  chainl1 unaryExpr (EBinary <$> ((Mul <$ star) <|> (Div <$ slash)))
+  chainl1 unaryExpr (captureSpan (pure (fanagle EBinary)) <*> captureSpan ((Mul <$ star) <|> (Div <$ slash)))
+
+  -- Name not permanent
+fanagle :: (b -> a -> a -> NodeId -> a) -> (NodeId -> b -> a -> a -> a)
+fanagle f = (\nodeId a b c -> f a b c nodeId)
 
 recordExpr :: Parser Expr
 recordExpr = do
-  ERecord <$> braces (commaSep recordFieldExpr)
+  captureSpan $ ERecord <$> braces (commaSep recordFieldExpr)
 
 recordFieldExpr :: Parser (Text, Expr)
 recordFieldExpr = do
@@ -230,7 +252,7 @@ recordFieldExpr = do
   return (name, value)
 
 literal :: Parser Literal
-literal =
+literal = captureSpan $
   try (LFloat <$> float)
     <|> (LInt <$> integer)
     <|> (LChar <$> charLiteral)
@@ -244,28 +266,28 @@ pattern =
     <|> recordPattern
     <|> listPattern
     <|> literalPattern
-    <|> symbol "_" $> PDiscard
-    <|> PVar <$> identifier
+    <|> captureSpan (symbol "_" $> PDiscard)
+    <|> captureSpan (PVar <$> identifier)
 
 constructorPattern :: Parser Pattern
-constructorPattern = do
+constructorPattern = captureSpan $ do
   con <- typeIdentifier
   pats <- option [] (parens (commaSep pattern))
   return $ PConstructor con pats
 
 recordPattern :: Parser Pattern
-recordPattern = do
+recordPattern = captureSpan $ do
   fields <- braces (commaSep fieldPattern)
   return $ PRecord fields
 
 -- TODO: We need a cons operator or similar
 listPattern :: Parser Pattern
-listPattern = do
+listPattern = captureSpan $ do
   pats <- brackets (commaSep pattern)
   return $ PList pats
 
 literalPattern :: Parser Pattern
-literalPattern = PLiteral <$> literal
+literalPattern = captureSpan $ PLiteral <$> literal
 
 fieldPattern :: Parser (Text, Pattern)
 fieldPattern = do
@@ -276,7 +298,7 @@ fieldPattern = do
 
 -- "Lexer"
 
-mnmlDef :: Tok.GenLanguageDef Text () Identity
+mnmlDef :: Tok.GenLanguageDef Text (ParserEnv, CompilerState) Identity
 mnmlDef =
   Tok.LanguageDef
     { Tok.caseSensitive = True,
@@ -292,7 +314,7 @@ mnmlDef =
       Tok.reservedNames = ["alias", "case", "of", "not", "and", "or"]
     }
 
-lexer :: Tok.GenTokenParser Text () Identity
+lexer :: Tok.GenTokenParser Text (ParserEnv, CompilerState) Identity
 lexer = Tok.makeTokenParser mnmlDef
 
 identifier :: Parser Text

@@ -9,9 +9,9 @@ import qualified Data.Map            as Map
 import           Data.Maybe
 import           Data.Text           (Text, pack)
 import           Lens.Micro          (Lens', lens, over)
-import           MNML                (CompilerState (..))
+import           MNML                (CompilerState (..), Type (..))
 import           MNML.Parser         (Declaration (..), Expr (..), Literal (..),
-                                      Type (..), parse)
+                                      parse)
 
 type Modules = Map.Map Text Text
 
@@ -44,37 +44,37 @@ infer modName valueName = do
       )
 
 inferFromExpr :: Context -> Expr -> Either Text Type
-inferFromExpr context (EVar name) =
+inferFromExpr context (EVar name _) =
   maybe
     (Left (mconcat ["Variable ", name, " not found."]))
     Right
     ((Map.!?) (_bindings context) name)
-inferFromExpr context (EConstructor name) = constructorType (_modules context) (_modName context) name
-inferFromExpr _context (ELit literal) = Right (litType literal)
+inferFromExpr context (EConstructor name _) = constructorType (_modules context) (_modName context) name
+inferFromExpr _context (ELit literal _) = Right (litType literal)
 -- TODO: We need to be able to refine arg types...
-inferFromExpr context (ELambda argNames body) =
+inferFromExpr context (ELambda argNames body _) =
   let scopedContext = addBindings context argNames
    in TFun (map (const TGeneric) argNames) <$> inferFromExpr scopedContext body
-inferFromExpr context (EApp funExpr _args) =
+inferFromExpr context (EApp funExpr _args _) =
   inferFromExpr context funExpr
     >>= ( \case
             (TFun _args ret) -> Right ret
             expr -> Left (mconcat [pack . show $ expr, " is not a function"])
         )
-inferFromExpr context (ECase _ branches) = maybe (Right TGeneric) (inferFromExpr context . snd) (listToMaybe branches)
-inferFromExpr _context (EBinary _ _ _) = Right TInt
-inferFromExpr context (ERecord fields) = buildRecType context fields
-inferFromExpr context (EList elements) = TList <$> maybe (Right TGeneric) (inferFromExpr context) (listToMaybe elements)
+inferFromExpr context (ECase _ branches _) = maybe (Right TGeneric) (inferFromExpr context . snd) (listToMaybe branches)
+inferFromExpr _context (EBinary _ _ _ _) = Right TInt
+inferFromExpr context (ERecord fields _) = buildRecType context fields
+inferFromExpr context (EList elements _) = TList <$> maybe (Right TGeneric) (inferFromExpr context) (listToMaybe elements)
 
 addBindings :: Context -> [Text] -> Context
 addBindings context varNames =
   over bindings (Map.union (Map.fromList (map (,TGeneric) varNames))) context
 
 litType :: Literal -> Type
-litType (LInt _)    = TInt
-litType (LFloat _)  = TFloat
-litType (LChar _)   = TChar
-litType (LString _) = TString
+litType (LInt _ _)    = TInt
+litType (LFloat _ _)  = TFloat
+litType (LChar _ _)   = TChar
+litType (LString _ _) = TString
 
 buildRecType :: Context -> [(Text, Expr)] -> Either Text Type
 buildRecType context fields =
@@ -98,7 +98,7 @@ findConstructorType modu constructorName =
   listToMaybe
     ( mapMaybe
         ( \case
-            (TypeDecl name constructors) ->
+            (TypeDecl name constructors _) ->
               ( \case
                   (_, []) -> TNamedType name
                   (_, args) -> TFun args (TNamedType name)
@@ -129,7 +129,7 @@ findValue modu valueName =
   listToMaybe $
     mapMaybe
       ( \case
-          (ValueDecl vn expr) | vn == valueName -> Just expr
+          (ValueDecl vn expr _) | vn == valueName -> Just expr
           _ -> Nothing
       )
       modu
