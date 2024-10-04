@@ -140,17 +140,17 @@ pType =
     <|> recordType
     <|> listType
     <|> simpleType
-    <|> captureSpan (TNamedType <$> typeIdentifier)
+    <|> (TNamedType <$> typeIdentifier)
 
 funType :: Parser Type
-funType = captureSpan $ do
+funType =  do
   argTypes <- parens (commaSep pType)
   _ <- rArrow
   returnType <- pType
   return $ TFun argTypes returnType
 
 recordType :: Parser Type
-recordType = captureSpan $ do
+recordType = do
   fields <- braces (commaSep fieldDecl)
   return $ TRecord fields
 
@@ -162,10 +162,10 @@ fieldDecl = do
   return (fieldName, fieldType)
 
 listType :: Parser Type
-listType = captureSpan $ TList <$> brackets pType
+listType =  TList <$> brackets pType
 
 simpleType :: Parser Type
-simpleType = captureSpan $
+simpleType =
   (TInt <$ symbol "Int")
     <|> (TFloat <$ symbol "Float")
     <|> (TChar <$ symbol "Char")
