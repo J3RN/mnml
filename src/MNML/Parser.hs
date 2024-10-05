@@ -14,7 +14,7 @@ import           Data.Text
 import           Lens.Micro          (over)
 import           MNML                (CompilerState (..), NodeId,
                                       SourceSpan (..), Type (..), stateSpans)
-import           Text.Parsec         (ParseError, ParsecT, alphaNum, chainl1,
+import           Text.Parsec         (ParseError, ParsecT, SourcePos, alphaNum,
                                       char, eof, getPosition, getState, lower,
                                       many, many1, manyTill, oneOf, option,
                                       putState, runParserT, sepBy1, space, try,
@@ -74,23 +74,32 @@ data Operator
 
 -- Client API
 parse :: Text -> Text -> State CompilerState (Either ParseError [Declaration])
-parse filename source =
-  runParserT MNML.Parser.mod (ParserEnv {nextId = 0}) (unpack filename) source
+parse filename = runParserT MNML.Parser.mod (ParserEnv {nextId = 0}) (unpack filename)
 
 -- Helpers
+
+-- Fix name later
+nodeIdPlusPlus :: Parser NodeId
+nodeIdPlusPlus = do
+  pe <- getState
+  let nodeId = nextId pe
+  putState (pe {nextId = nodeId + 1})
+  return nodeId
+
+recordSpan :: SourcePos -> SourcePos -> NodeId -> Parser ()
+recordSpan start end nodeId = do
+  let nodeSpan = SourceSpan start end
+  lift $ modify (over stateSpans (Map.insert nodeId nodeSpan))
 
 -- This function needs to record the span of p, retrieve the next NodeID, increment the node
 -- counter, and associate the NodeID with the recorded span.
 captureSpan :: Parser (NodeId -> b) -> Parser b
 captureSpan p = do
-  pe <- getState
-  let nodeId = nextId pe
-  putState (pe {nextId = nodeId + 1})
+  nodeId <- nodeIdPlusPlus
   start <- getPosition
   node <- p
   end <- getPosition
-  let nodeSpan = SourceSpan start end
-  lift $ modify (over stateSpans (Map.insert nodeId nodeSpan))
+  recordSpan start end nodeId
   return (node nodeId)
 
 -- Top-level Parsers
@@ -220,23 +229,35 @@ caseBranch = do
 
 binaryExpr :: Parser Expr
 binaryExpr =
-  chainl1 boolExpr (captureSpan (pure (fanagle EBinary)) <*> captureSpan (Equals <$ dEqual))
+  captureChainl1 boolExpr (EBinary <$> captureSpan (Equals <$ dEqual))
 
 boolExpr :: Parser Expr
 boolExpr =
-  chainl1 termExpr (captureSpan (pure (fanagle EBinary)) <*> captureSpan ((And <$ reserved "and") <|> (Or <$ reserved "or")))
+  captureChainl1 termExpr (EBinary <$> captureSpan ((And <$ reserved "and") <|> (Or <$ reserved "or")))
 
 termExpr :: Parser Expr
 termExpr =
-  chainl1 factorExpr (captureSpan (pure (fanagle EBinary)) <*> captureSpan ((Add <$ plus) <|> (Sub <$ minus)))
+  captureChainl1 factorExpr (EBinary <$> captureSpan ((Add <$ plus) <|> (Sub <$ minus)))
 
 factorExpr :: Parser Expr
 factorExpr =
-  chainl1 unaryExpr (captureSpan (pure (fanagle EBinary)) <*> captureSpan ((Mul <$ star) <|> (Div <$ slash)))
+  captureChainl1 unaryExpr (EBinary <$> captureSpan ((Mul <$ star) <|> (Div <$ slash)))
 
--- Name not permanent
-fanagle :: (b -> a -> a -> NodeId -> a) -> (NodeId -> b -> a -> a -> a)
-fanagle f = (\nodeId a b c -> f a b c nodeId)
+captureChainl1 :: Parser a -> Parser (a -> a -> NodeId -> a) -> Parser a
+captureChainl1 p op =
+  do
+    start <- getPosition
+    x <- p
+    rest start x
+  where
+    rest start x = do{ nodeId <- nodeIdPlusPlus;
+                       f <- op;
+                       y <- p;
+                       end <- getPosition;
+                       recordSpan start end nodeId;
+                       let res = f x y nodeId in rest start res
+                     }
+                    <|> return x
 
 recordExpr :: Parser Expr
 recordExpr = do
