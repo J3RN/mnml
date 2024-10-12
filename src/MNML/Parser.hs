@@ -7,6 +7,7 @@ module MNML.Parser
     , parse
     ) where
 
+import           Control.Monad       (foldM)
 import           Control.Monad.State (State, lift, modify)
 import           Data.Functor        (($>))
 import qualified Data.Map            as Map
@@ -184,8 +185,7 @@ expression :: Parser Expr
 expression = try binaryExpr <|> unaryExpr
 
 unaryExpr :: Parser Expr
--- unaryExpr = try appExpr <|> primaryExpr
-unaryExpr = primaryExpr
+unaryExpr = try appExpr <|> primaryExpr
 
 -- Any expression that is not an application
 primaryExpr :: Parser Expr
@@ -221,11 +221,18 @@ caseBranch = do
   expr <- expression
   return (pat, expr)
 
--- appExpr :: Parser Expr
--- appExpr = do
---   func <- primaryExpr
---   apps <- many1 (parens (commaSep expression))
---   return $ Prelude.foldl EApp func apps
+appExpr :: Parser Expr
+appExpr = do
+  start <- getPosition
+  func <- primaryExpr
+  apps <- many1 (do{ params <- parens (commaSep expression);
+                     end <- getPosition;
+                     return (params, end)
+                   })
+  foldM (\expr (params, end) -> do{ nodeId <- nodeIdPlusPlus;
+                                     recordSpan start end nodeId;
+                                     return $ EApp expr params nodeId
+                                   }) func apps
 
 binaryExpr :: Parser Expr
 binaryExpr =
