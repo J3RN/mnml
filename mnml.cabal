@@ -26,7 +26,9 @@ source-repository head
 library
   exposed-modules:
       MNML
+      MNML.AST
       MNML.Parser
+      MNML.Type
   other-modules:
       Paths_mnml
   autogen-modules:

@@ -1,10 +1,5 @@
 module MNML.Parser
-    ( Declaration (..)
-    , Expr (..)
-    , Literal (..)
-    , Operator (..)
-    , Pattern (..)
-    , parse
+    ( parse
     ) where
 
 import           Control.Monad       (foldM)
@@ -14,7 +9,9 @@ import qualified Data.Map            as Map
 import           Data.Text
 import           Lens.Micro          (over)
 import           MNML                (CompilerState (..), NodeId,
-                                      SourceSpan (..), Type (..), stateSpans)
+                                      SourceSpan (..), stateSpans)
+import           MNML.AST            (Declaration (..), Expr (..), Literal (..),
+                                      Operator (..), Pattern (..), Type (..))
 import           Text.Parsec         (ParseError, ParsecT, SourcePos, alphaNum,
                                       char, eof, getPosition, getState, lower,
                                       many, many1, manyTill, oneOf, option,
@@ -29,49 +26,6 @@ newtype ParserEnv
 
 type Parser = ParsecT Text ParserEnv (State CompilerState)
 
-data Declaration
-  = TypeDecl Text [(Text, [Type])] NodeId
-  | TypeAliasDecl Text [(Text, Type)] NodeId
-  | ValueDecl Text Expr NodeId
-  deriving (Eq, Show)
-
-data Expr
-  = EVar Text NodeId
-  | EConstructor Text NodeId
-  | ELit Literal NodeId
-  | ELambda [Text] Expr NodeId -- ["x", "y"] -> EBinary (EVar "x") Add (EVar "y")
-  | EApp Expr [Expr] NodeId -- (EVar "fun") [(EVar "x"), (EVar "y")]
-  | ECase Expr [(Pattern, Expr)] NodeId
-  | EBinary Operator Expr Expr NodeId
-  | ERecord [(Text, Expr)] NodeId
-  | EList [Expr] NodeId
-  deriving (Eq, Show)
-
-data Literal
-  = LInt Integer NodeId
-  | LFloat Double NodeId
-  | LChar Char NodeId
-  | LString Text NodeId
-  deriving (Eq, Show)
-
-data Pattern
-  = PVar Text NodeId
-  | PDiscard NodeId -- _
-  | PConstructor Text [Pattern] NodeId
-  | PRecord [(Text, Pattern)] NodeId
-  | PList [Pattern] NodeId
-  | PLiteral Literal NodeId
-  deriving (Eq, Show)
-
-data Operator
-  = Add NodeId
-  | Sub NodeId
-  | Mul NodeId
-  | Div NodeId
-  | And NodeId
-  | Or NodeId
-  | Equals NodeId
-  deriving (Eq, Show)
 
 -- Client API
 parse :: Text -> Text -> State CompilerState (Either ParseError [Declaration])
@@ -148,17 +102,17 @@ pType =
     <|> recordType
     <|> listType
     <|> simpleType
-    <|> (TNamedType <$> typeIdentifier)
+    <|> captureSpan (TNamedType <$> typeIdentifier)
 
 funType :: Parser Type
-funType = do
+funType = captureSpan $ do
   argTypes <- parens (commaSep pType)
   _ <- rArrow
   returnType <- pType
   return $ TFun argTypes returnType
 
 recordType :: Parser Type
-recordType = do
+recordType = captureSpan $ do
   fields <- braces (commaSep fieldDecl)
   return $ TRecord fields
 
