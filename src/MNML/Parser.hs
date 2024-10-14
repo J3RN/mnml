@@ -124,14 +124,14 @@ fieldDecl = do
   return (fieldName, fieldType)
 
 listType :: Parser Type
-listType = TList <$> brackets pType
+listType = captureSpan (TList <$> brackets pType)
 
 simpleType :: Parser Type
 simpleType =
-  (TInt <$ symbol "Int")
-    <|> (TFloat <$ symbol "Float")
-    <|> (TChar <$ symbol "Char")
-    <|> (TString <$ symbol "String")
+  captureSpan (TInt <$ symbol "Int")
+    <|> captureSpan (TFloat <$ symbol "Float")
+    <|> captureSpan (TChar <$ symbol "Char")
+    <|> captureSpan (TString <$ symbol "String")
 
 -- Expression Parsers
 
