@@ -29,6 +29,7 @@ library
       MNML.AST
       MNML.Parser
       MNML.Type
+      MNML.Unification
   other-modules:
       Paths_mnml
   autogen-modules:
