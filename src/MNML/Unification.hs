@@ -2,11 +2,10 @@ module MNML.Unification
     ( valueType
     ) where
 
-import           Control.Monad.State (State, evalState, get, runState)
+import           Control.Monad.State (State, evalState, get, put, runState)
 import           Data.Map            as Map
-import           Data.Maybe          (maybe)
 import           Data.Text           (Text)
-import           MNML                (CompilerState, NodeId, stateModules)
+import           MNML                (CompilerState, NodeId)
 import qualified MNML.AST            as AST
 import           MNML.Type           as T
 
@@ -35,8 +34,8 @@ unify' (AST.EVar name nodeId) = do
   return $ maybe (Left (UnknownVar nodeId)) Right (b Map.!? name)
 
 unify' (AST.EConstructor name nodeId) = do
-  UnificationState{_module = mod} <- get
-  return $ maybe (Left $ UnknownConstructor nodeId) Right (constructorFunType mod name)
+  UnificationState{_module = modu} <- get
+  return $ maybe (Left $ UnknownConstructor nodeId) Right (constructorFunType modu name)
 
 unify' (AST.ELit lit _) = pure $ Right $ unifyLit lit
 
@@ -44,7 +43,8 @@ unify' (AST.ELambda args body _) = do
   uniState <- get
   let argTypes = Prelude.map (, T.Generic) args
       (bodyType, finalState) = runState (unify' body) uniState
-      -- TODO: Extract refined arg types
+  put finalState
+  -- TODO: Extract refined arg types
   return $ T.Fun [] <$> bodyType
 
 unify' (AST.EApp _fun _args _)          = _
@@ -60,14 +60,14 @@ unifyLit (AST.LChar _ _)   = T.Char
 unifyLit (AST.LString _ _)=T.String
 
 valueType :: CompilerState -> Text -> Text -> Either UnificationError Type
-valueType cState mod valName =
+valueType cState modu valName =
   -- TODO: Check cache, have a cache, etc
-  case valueDef cState mod valName of
-    Just expr -> evalState (unify' expr) (UnificationState Map.empty mod)
+  case valueDef cState modu valName of
+    Just expr -> evalState (unify' expr) (UnificationState Map.empty modu)
     Nothing   -> Left (UnknownVal valName)
 
 valueDef :: CompilerState -> Text -> Text -> Maybe AST.Expr
-valueDef cState mod valName = _
+valueDef cState modu valName = _
 
 constructorFunType :: Text -> Text -> Maybe T.Type
-constructorFunType mod conName = _
+constructorFunType modu conName = _
