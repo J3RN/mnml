@@ -2,9 +2,11 @@ module MNML.Unification
     ( valueType
     ) where
 
-import           Control.Monad.State (State, evalState, get, put, runState)
+import           Control.Monad       (foldM)
+import           Control.Monad.State (State, evalState, get, gets, put,
+                                      runState)
+import           Data.Either         (isLeft)
 import qualified Data.Map            as Map
-import           Data.Maybe          (isNothing)
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState, NodeId)
@@ -73,19 +75,21 @@ exprType' (AST.ECase _subj _branches _)    = _
 exprType' (AST.EBinary _op _left _right _) = _
 exprType' (AST.ERecord _fields _)          = _
 exprType' (AST.EList elems nodeId)             =
-      do
-        uniState <- get
-        let (elemsType, _) = foldl foldType (Just T.Generic, uniState) elems
-        case elemsType of
-          Nothing -> Left (ListInconsistentType nodeId)
-          Just t  -> Right t
-  where foldType (t, uniS) e =
-          if isNothing t then (t, uniS)
-          else let (elemT, newUniS) = runState (exprType' e) uniS
-               in case (t, elemT) of
-                    (Nothing, _)       -> (Nothing, newUniS)
-                    (_, Nothing)       -> (Nothing, newUniS)
-                    (Just t1, Just t2) -> (unify t1 t2, newUniS)
+  let elemT = foldM (foldType nodeId) (Right T.Generic) elems
+  in gets (evalState elemT)
+
+-- This was meant to be a where, but I got a cryptic error
+foldType :: NodeId -> Either UnificationError T.Type -> AST.Expr -> State UnificationState (Either UnificationError T.Type)
+foldType nodeId t e =
+          if isLeft t then return t
+          else do
+            uniS <- get
+            let (elemT, newUniS) = runState (exprType' e) uniS
+            put newUniS
+            case (t, elemT) of
+              (Left err, _)        -> return $ Left err
+              (_, Left err)        -> return $ Left err
+              (Right t1, Right t2) -> return $ maybe (Left $ ListInconsistentType nodeId) Right (unify t1 t2)
 
 litType :: AST.Literal -> T.Type
 litType (AST.LInt _ _)    = T.Int
