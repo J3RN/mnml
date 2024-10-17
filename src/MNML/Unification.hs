@@ -3,8 +3,10 @@ module MNML.Unification
     ) where
 
 import           Control.Monad.State (State, evalState, get, put, runState)
-import           Data.Map            as Map
+import qualified Data.Map            as Map
+import           Data.Maybe          (isNothing)
 import           Data.Text           (Text)
+import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState, NodeId)
 import qualified MNML.AST            as AST
 import           MNML.Type           as T
@@ -13,57 +15,80 @@ data UnificationError
   = UnknownVar NodeId
   | UnknownVal Text
   | UnknownConstructor NodeId
+  | TooFewArguments NodeId
+  | TooManyArguments NodeId
+  | NotFunctionType Type NodeId
+  | ListInconsistentType NodeId
+  | UnificationError NodeId NodeId
 
 data UnificationState
   = UnificationState
-      { _bindings :: Map Text Type
+      { _bindings :: Map.Map Text Type
       , _module   :: Text
       }
+
+bindings :: Lens' UnificationState (Map.Map Text Type)
+bindings = lens _bindings (\us bin -> us {_bindings = bin})
 
 -- unify :: Text -> Text -> State CompilerState (Either UnificationError Type)
 -- unify mod valName = do
 --   cState <- get
 --   return $ case valueDef cState mod valName of
---              Just expr -> evalState (unify' expr) (UnificationState Map.empty mod)
+--              Just expr -> evalState (exprType' expr) (UnificationState Map.empty mod)
 --              Nothing -> Left (UnknownVal valName)
 
-unify' :: AST.Expr -> State UnificationState (Either UnificationError Type)
+exprType' :: AST.Expr -> State UnificationState (Either UnificationError Type)
 
-unify' (AST.EVar name nodeId) = do
+exprType' (AST.EVar name nodeId) = do
   UnificationState {_bindings = b} <- get
   return $ maybe (Left (UnknownVar nodeId)) Right (b Map.!? name)
 
-unify' (AST.EConstructor name nodeId) = do
+exprType' (AST.EConstructor name nodeId) = do
   UnificationState{_module = modu} <- get
   return $ maybe (Left $ UnknownConstructor nodeId) Right (constructorFunType modu name)
 
-unify' (AST.ELit lit _) = pure $ Right $ unifyLit lit
+exprType' (AST.ELit lit _) = return $ Right $ litType lit
 
-unify' (AST.ELambda args body _) = do
+exprType' (AST.ELambda args body _) = do
   uniState <- get
   let argTypes = Prelude.map (, T.Generic) args
-      (bodyType, finalState) = runState (unify' body) uniState
-  put finalState
-  -- TODO: Extract refined arg types
-  return $ T.Fun [] <$> bodyType
+      scopedUniState = over bindings (Map.union (Map.fromList argTypes)) uniState
+      (bodyType, finalState) = runState (exprType' body) scopedUniState
+  -- put finalState
+  let finalArgTypes = (_bindings finalState Map.!) <$> args
+  return $ T.Fun finalArgTypes <$> bodyType
 
-unify' (AST.EApp _fun _args _)          = _
-unify' (AST.ECase _subj _branches _)    = _
-unify' (AST.EBinary _op _left _right _) = _
-unify' (AST.ERecord _fields _)          = _
-unify' (AST.EList _elems _)             = _
+exprType' (AST.EApp fun args nodeId)          = do
+  uniState <- get
+  let funType = evalState (exprType' fun) uniState
+  return $ case funType of
+             Left err                       -> Left err
+             Right (T.Fun argTypes resType) -> if length args > length argTypes then Left (TooManyArguments nodeId)
+                                               else if length args < length argTypes then Left (TooFewArguments nodeId)
+                                                    -- TODO: Unify args and argTypes
+                                                    else Right resType
+             Right otherType                -> Left (NotFunctionType otherType nodeId)
 
-unifyLit :: AST.Literal -> T.Type
-unifyLit (AST.LInt _ _)    = T.Int
-unifyLit (AST.LFloat _ _)  = T.Float
-unifyLit (AST.LChar _ _)   = T.Char
-unifyLit (AST.LString _ _)=T.String
+exprType' (AST.ECase _subj _branches _)    = _
+exprType' (AST.EBinary _op _left _right _) = _
+exprType' (AST.ERecord _fields _)          = _
+
+litType :: AST.Literal -> T.Type
+litType (AST.LInt _ _)    = T.Int
+litType (AST.LFloat _ _)  = T.Float
+litType (AST.LChar _ _)   = T.Char
+litType (AST.LString _ _) = T.String
+
+unify :: T.Type -> T.Type -> Maybe T.Type
+unify T.Generic t = Just t
+unify t T.Generic = Just t
+unify t1 t2       = Nothing
 
 valueType :: CompilerState -> Text -> Text -> Either UnificationError Type
 valueType cState modu valName =
   -- TODO: Check cache, have a cache, etc
   case valueDef cState modu valName of
-    Just expr -> evalState (unify' expr) (UnificationState Map.empty modu)
+    Just expr -> evalState (exprType' expr) (UnificationState Map.empty modu)
     Nothing   -> Left (UnknownVal valName)
 
 valueDef :: CompilerState -> Text -> Text -> Maybe AST.Expr
