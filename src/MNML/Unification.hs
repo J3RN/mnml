@@ -72,6 +72,20 @@ exprType' (AST.EApp fun args nodeId)          = do
 exprType' (AST.ECase _subj _branches _)    = _
 exprType' (AST.EBinary _op _left _right _) = _
 exprType' (AST.ERecord _fields _)          = _
+exprType' (AST.EList elems nodeId)             =
+      do
+        uniState <- get
+        let (elemsType, _) = foldl foldType (Just T.Generic, uniState) elems
+        case elemsType of
+          Nothing -> Left (ListInconsistentType nodeId)
+          Just t  -> Right t
+  where foldType (t, uniS) e =
+          if isNothing t then (t, uniS)
+          else let (elemT, newUniS) = runState (exprType' e) uniS
+               in case (t, elemT) of
+                    (Nothing, _)       -> (Nothing, newUniS)
+                    (_, Nothing)       -> (Nothing, newUniS)
+                    (Just t1, Just t2) -> (unify t1 t2, newUniS)
 
 litType :: AST.Literal -> T.Type
 litType (AST.LInt _ _)    = T.Int
