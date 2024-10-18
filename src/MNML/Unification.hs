@@ -7,11 +7,13 @@ import           Control.Monad.State (State, evalState, get, gets, put,
                                       runState)
 import           Data.Either         (isLeft)
 import qualified Data.Map            as Map
+import           Data.Maybe          (listToMaybe, mapMaybe)
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over)
-import           MNML                (CompilerState, NodeId)
+import           MNML                (CompilerState (..), NodeId)
 import qualified MNML.AST            as AST
 import qualified MNML.Type           as T
+import qualified MNML.Parser         as P
 
 data UnificationError
   = UnknownVar NodeId
@@ -22,6 +24,7 @@ data UnificationError
   | NotFunctionType T.Type NodeId
   | ListInconsistentType NodeId
   | UnificationError NodeId NodeId
+  | ParseError P.ParseError
 
 data UnificationState
   = UnificationState
@@ -102,15 +105,29 @@ unify T.Generic t = Just t
 unify t T.Generic = Just t
 unify _t1 _t2     = Nothing
 
-valueType :: CompilerState -> Text -> Text -> Either UnificationError Type
-valueType cState modu valName =
-  -- TODO: Check cache, have a cache, etc
-  case valueDef cState modu valName of
-    Just expr -> evalState (exprType' expr) (UnificationState Map.empty modu)
-    Nothing   -> Left (UnknownVal valName)
+-- I think the play here is to use these State CompilerState ... to implement the cache (by allowing them to populate a cache in CompilerState)
 
-valueDef :: CompilerState -> Text -> Text -> Maybe AST.Expr
-valueDef cState modu valName = _
+valueType :: Text -> Text -> State CompilerState (Either UnificationError T.Type)
+valueType modu valName =
+  -- TODO: Check cache, have a cache, etc
+  (\case
+    Right expr -> evalState (exprType' expr) (UnificationState Map.empty modu)
+    Left parseErr -> Left parseErr
+  ) <$> valueDef modu valName
+
+valueDef :: Text -> Text -> State CompilerState (Either UnificationError AST.Expr)
+valueDef modu valName = do
+  -- TODO: Check cache, have a cache, etc
+  cState <- get
+  return $ case evalState (P.parse modu (_stateModules cState Map.! modu)) cState of
+             Right decls -> findDef valName decls
+             Left parseErr -> Left (ParseError parseErr)
+  where
+    findDef name decls =
+      maybe (Left $ UnknownVal name) Right $ listToMaybe $ mapMaybe (\case
+                   (AST.ValueDecl n expr _) | n == name -> Just expr
+                   _ -> Nothing
+               ) decls
 
 constructorFunType :: Text -> Text -> Maybe T.Type
 constructorFunType modu conName = _
