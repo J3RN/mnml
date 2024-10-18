@@ -35,6 +35,11 @@ data UnificationState
       , _module   :: Text
       }
 
+initialEnv :: Text -> UnificationState
+initialEnv modu = UnificationState { _bindings = Map.empty
+                                   , _module = modu
+                                   }
+
 bindings :: Lens' UnificationState (Map Text T.Type)
 bindings = lens _bindings (\us bin -> us {_bindings = bin})
 
@@ -118,7 +123,7 @@ valueType :: Text -> Text -> State CompilerState (Either UnificationError T.Type
 valueType modu valName =
   -- TODO: Check cache, have a cache, etc
   (\case
-    Right expr -> evalState (exprType' expr) (UnificationState Map.empty modu)
+    Right expr -> evalState (exprType' expr) (initialEnv modu)
     Left parseErr -> Left parseErr
   ) <$> valueDef modu valName
 
