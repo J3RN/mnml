@@ -100,7 +100,7 @@ litType (AST.LString _ _) = T.String
 unify :: T.Type -> T.Type -> Maybe T.Type
 unify T.Generic t = Just t
 unify t T.Generic = Just t
-unify t1 t2       = Nothing
+unify _t1 _t2     = Nothing
 
 valueType :: CompilerState -> Text -> Text -> Either UnificationError Type
 valueType cState modu valName =
