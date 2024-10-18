@@ -11,7 +11,7 @@ import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState, NodeId)
 import qualified MNML.AST            as AST
-import           MNML.Type           as T
+import qualified MNML.Type           as T
 
 data UnificationError
   = UnknownVar NodeId
@@ -19,17 +19,17 @@ data UnificationError
   | UnknownConstructor NodeId
   | TooFewArguments NodeId
   | TooManyArguments NodeId
-  | NotFunctionType Type NodeId
+  | NotFunctionType T.Type NodeId
   | ListInconsistentType NodeId
   | UnificationError NodeId NodeId
 
 data UnificationState
   = UnificationState
-      { _bindings :: Map.Map Text Type
+      { _bindings :: Map.Map Text T.Type
       , _module   :: Text
       }
 
-bindings :: Lens' UnificationState (Map.Map Text Type)
+bindings :: Lens' UnificationState (Map.Map Text T.Type)
 bindings = lens _bindings (\us bin -> us {_bindings = bin})
 
 -- unify :: Text -> Text -> State CompilerState (Either UnificationError Type)
@@ -39,7 +39,7 @@ bindings = lens _bindings (\us bin -> us {_bindings = bin})
 --              Just expr -> evalState (exprType' expr) (UnificationState Map.empty mod)
 --              Nothing -> Left (UnknownVal valName)
 
-exprType' :: AST.Expr -> State UnificationState (Either UnificationError Type)
+exprType' :: AST.Expr -> State UnificationState (Either UnificationError T.Type)
 
 exprType' (AST.EVar name nodeId) = do
   UnificationState {_bindings = b} <- get
