@@ -63,13 +63,10 @@ exprType' (AST.EVar name nodeId) = do
 exprType' (AST.ELit lit _) = return $ Right $ litType lit
 
 exprType' (AST.ELambda args body _) = do
-  uniState <- get
-  let argTypes = Prelude.map (, T.Generic) args
-      scopedUniState = over bindings (Map.union (Map.fromList argTypes)) uniState
-      (bodyType, finalState) = runState (exprType' body) scopedUniState
-  put finalState
-  let finalArgTypes = (_bindings finalState Map.!) <$> args
-  return $ T.ConcreteType . T.Fun finalArgTypes <$> bodyType
+  populateVariableBindings args
+  bodyType <- exprType' body
+  finalArgTypes <- gets (\s -> map (_bindings s Map.!) args)
+  return $ T.UnaliasedType . T.Fun finalArgTypes <$> bodyType
 
 exprType' (AST.EApp fun args nodeId) = do
   funType <- exprType' fun
@@ -105,6 +102,19 @@ foldType nodeId t e =
       (Left err, _)        -> return $ Left err
       (_, Left err)        -> return $ Left err
       (Right t1, Right t2) -> return $ maybe (Left $ ListInconsistentType nodeId) Right (unify t1 t2)
+
+
+populateVariableBindings :: [Text] -> State UnificationState ()
+populateVariableBindings args = do
+  typeVars <- mapM (\arg -> (\tvId -> (arg, T.Var arg tvId)) <$> addTypeVar) args
+  modify (over bindings (Map.union (Map.fromList typeVars)))
+
+addTypeVar :: State UnificationState T.VarId
+addTypeVar = state addTypeVar'
+  where addTypeVar' s =
+          let newTVId = _nextVarId s
+          in (newTVId, s { _nextVarId = newTVId + 1
+                         , _typeVars = Map.insert newTVId T.Generic (_typeVars s)})
 
 litType :: AST.Literal -> T.Type
 litType (AST.LInt _ _)    = T.ConcreteType T.Int
