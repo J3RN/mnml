@@ -23,25 +23,25 @@ spec =
     describe "literals" $ do
       it "unifies ints" $ do
         let (res, cs) = unify' "main = 42"
-        res `shouldBe` Right T.Int
+        res `shouldBe` Right (T.ConcreteType T.Int)
 
       it "unifies floats" $ do
         let (res, cs) = unify' "main = 3.14"
-        res `shouldBe` Right T.Float
+        res `shouldBe` Right (T.ConcreteType T.Float)
 
       it "unifies chars" $ do
         let (res, cs) = unify' "main = 'c'"
-        res `shouldBe` Right T.Char
+        res `shouldBe` Right (T.ConcreteType T.Char)
 
       it "unifies strings" $ do
         let (res, cs) = unify' "main = \"hello world\""
-        res `shouldBe` Right T.String
+        res `shouldBe` Right (T.ConcreteType T.String)
 
     describe "lambdas" $ do
       it "unifies nullary lambdas" $ do
         let (res, cs) = unify' "main = () => { 1 }"
-        res `shouldBe` Right (T.Fun [] T.Int)
+        res `shouldBe` Right (T.ConcreteType (T.Fun [] (T.ConcreteType T.Int)))
 
       it "unifies identity" $ do
         let (res, cs) = unify' "main = (x) => { x }"
-        res `shouldBe` Right (T.Fun [T.Generic] T.Generic)
+        res `shouldBe` Right (T.ConcreteType (T.Fun [T.Generic] T.Generic))

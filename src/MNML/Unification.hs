@@ -63,18 +63,18 @@ exprType' (AST.ELambda args body _) = do
       (bodyType, finalState) = runState (exprType' body) scopedUniState
   -- put finalState
   let finalArgTypes = (_bindings finalState Map.!) <$> args
-  return $ T.Fun finalArgTypes <$> bodyType
+  return $ T.ConcreteType . T.Fun finalArgTypes <$> bodyType
 
 exprType' (AST.EApp fun args nodeId) = do
   uniState <- get
   let funType = evalState (exprType' fun) uniState
   return $ case funType of
-             Left err                       -> Left err
-             Right (T.Fun argTypes resType) -> if length args > length argTypes then Left (TooManyArguments nodeId)
-                                               else if length args < length argTypes then Left (TooFewArguments nodeId)
-                                                    -- TODO: Unify args and argTypes
-                                                    else Right resType
-             Right otherType                -> Left (NotFunctionType otherType nodeId)
+             Left err -> Left err
+             Right (T.ConcreteType (T.Fun argTypes resType)) -> if length args > length argTypes then Left (TooManyArguments nodeId)
+                                                                else if length args < length argTypes then Left (TooFewArguments nodeId)
+                                                                     -- TODO: Unify args and argTypes
+                                                                     else Right resType
+             Right otherType -> Left (NotFunctionType otherType nodeId)
 
 -- exprType' (AST.ECase _subj _branches _)    = _
 
@@ -102,10 +102,10 @@ foldType nodeId t e =
               (Right t1, Right t2) -> return $ maybe (Left $ ListInconsistentType nodeId) Right (unify t1 t2)
 
 litType :: AST.Literal -> T.Type
-litType (AST.LInt _ _)    = T.Int
-litType (AST.LFloat _ _)  = T.Float
-litType (AST.LChar _ _)   = T.Char
-litType (AST.LString _ _) = T.String
+litType (AST.LInt _ _)    = T.ConcreteType T.Int
+litType (AST.LFloat _ _)  = T.ConcreteType T.Float
+litType (AST.LChar _ _)   = T.ConcreteType T.Char
+litType (AST.LString _ _) = T.ConcreteType T.String
 
 unify :: T.Type -> T.Type -> Maybe T.Type
 unify T.Generic t = Just t
