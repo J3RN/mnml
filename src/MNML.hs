@@ -3,12 +3,14 @@ module MNML
     , Modules
     , NodeId
     , SourceSpan (..)
+    , emptyState
     , stateModules
     , stateSpans
     , stateTypes
     ) where
 
 import           Data.Map    (Map)
+import qualified Data.Map    as Map
 import           Data.Text   (Text)
 import           Lens.Micro  (Lens', lens)
 import           MNML.Type   (Type (..))
@@ -32,17 +34,25 @@ type Types = Map NodeId Type
 
 data CompilerState
   = CompilerState
-      { _stateSpans   :: Spans
-      , _stateModules :: Modules
-      , _stateTypes   :: Types
+      { _spans   :: Spans
+      , _modules :: Modules
+      , _types   :: Types
       }
   deriving (Eq, Show)
 
+emptyState :: CompilerState
+emptyState = CompilerState { _spans = Map.empty
+                           , _modules = Map.empty
+                           , _types = Map.empty
+                           }
+
+-- Assorted lenses
+
 stateSpans :: Lens' CompilerState Spans
-stateSpans = lens _stateSpans (\cs ss -> cs {_stateSpans = ss})
+stateSpans = lens _spans (\cs spans -> cs {_spans = spans})
 
 stateModules :: Lens' CompilerState Modules
-stateModules = lens _stateModules (\cs sm -> cs {_stateModules = sm})
+stateModules = lens _modules (\cs mods -> cs {_modules = mods})
 
 stateTypes :: Lens' CompilerState Types
-stateTypes = lens _stateTypes (\cs sm -> cs {_stateTypes = sm})
+stateTypes = lens _types (\cs types -> cs {_types = types})

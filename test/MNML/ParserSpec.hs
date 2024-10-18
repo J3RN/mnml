@@ -8,16 +8,14 @@ import           Data.Bifunctor      (first)
 import qualified Data.Map            as Map
 import           Data.Text           (Text, pack, unlines)
 import           MNML                (CompilerState (..), NodeId,
-                                      SourceSpan (..))
+                                      SourceSpan (..), emptyState)
 import           MNML.AST
 import           MNML.Parser
 import           Test.Hspec
 import           Text.Parsec         (sourceColumn)
 
 parse' :: Text -> (Either Text [Declaration], CompilerState)
-parse' source = first (first (pack . show)) (runState (parse "test.mnml" source) compilerState)
-  where
-    compilerState = CompilerState {_stateSpans = Map.empty, _stateModules = Map.empty, _stateTypes = Map.empty}
+parse' source = first (first (pack . show)) (runState (parse "test.mnml" source) emptyState)
 
 spec :: Spec
 spec =
@@ -153,7 +151,7 @@ spec =
 -- Custom expectation for spans
 
 shouldSpan :: (HasCallStack) => CompilerState -> NodeId -> Int -> Int -> Expectation
-shouldSpan (CompilerState {_stateSpans = spans}) nodeId beg end =
+shouldSpan (CompilerState {_spans = spans}) nodeId beg end =
   let (SourceSpan sBeg sEnd) = spans Map.! nodeId
       actualBeg = sourceColumn sBeg
       actualEnd = sourceColumn sEnd

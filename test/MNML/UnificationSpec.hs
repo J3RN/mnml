@@ -5,7 +5,7 @@ module MNML.UnificationSpec
 import           Control.Monad.State (runState)
 import qualified Data.Map            as Map
 import           Data.Text
-import           MNML                (CompilerState (..))
+import           MNML                (CompilerState (..), emptyState)
 import qualified MNML.Type           as T
 import           MNML.Unification
 import           Test.Hspec
@@ -13,9 +13,7 @@ import           Test.Hspec
 unify' :: Text -> (Either UnificationError T.Type, CompilerState)
 unify' source = runState (valueType "test" "main") compilerState
   where
-    compilerState = CompilerState { _stateSpans = Map.empty
-                                  , _stateModules = Map.fromList [("test", source)]
-                                  , _stateTypes = Map.empty}
+    compilerState = emptyState {_modules = Map.fromList [("test", source)]}
 
 spec :: Spec
 spec =

@@ -7,6 +7,7 @@ import           Control.Monad       (foldM)
 import           Control.Monad.State (State, evalState, get, gets, put,
                                       runState)
 import           Data.Either         (isLeft)
+import           Data.Map            (Map)
 import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe)
 import           Data.Text           (Text)
@@ -30,11 +31,11 @@ data UnificationError
 
 data UnificationState
   = UnificationState
-      { _bindings :: Map.Map Text T.Type
+      { _bindings :: Map Text T.Type
       , _module   :: Text
       }
 
-bindings :: Lens' UnificationState (Map.Map Text T.Type)
+bindings :: Lens' UnificationState (Map Text T.Type)
 bindings = lens _bindings (\us bin -> us {_bindings = bin})
 
 -- unify :: Text -> Text -> State CompilerState (Either UnificationError Type)
@@ -125,7 +126,7 @@ valueDef :: Text -> Text -> State CompilerState (Either UnificationError AST.Exp
 valueDef modu valName = do
   -- TODO: Check cache, have a cache, etc
   cState <- get
-  return $ case evalState (P.parse modu (_stateModules cState Map.! modu)) cState of
+  return $ case evalState (P.parse modu (_modules cState Map.! modu)) cState of
              Right decls   -> findDef valName decls
              Left parseErr -> Left (ParseError parseErr)
   where
