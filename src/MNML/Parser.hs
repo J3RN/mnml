@@ -1,6 +1,6 @@
 module MNML.Parser
-    ( parse
-    , ParseError
+    ( ParseError
+    , parse
     ) where
 
 import           Control.Monad       (foldM)

@@ -4,7 +4,8 @@ module MNML.Type
 
 import           Data.Text
 
-type TVarId = Integer
+type VarId = Integer
+type TraitId = Integer
 
 data Type
   = Int
@@ -15,6 +16,7 @@ data Type
   | List Type -- TInt
   | Fun [Type] Type -- [TInt, TInt] -> TInt
   | Record [(Text, Type)] -- [("name", TString), ...]
-  | Var Text TVarId -- "a"
-  | Generic -- Maybe not needed (replace by above?)
+  | Var Text VarId -- "a"
+  | Generic
+  | Trait TraitId -- A type that implements a trait (concrete type unknown)
   deriving (Eq, Show)

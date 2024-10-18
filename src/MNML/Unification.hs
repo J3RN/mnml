@@ -1,5 +1,6 @@
 module MNML.Unification
-    ( valueType
+    ( UnificationError
+    , valueType
     ) where
 
 import           Control.Monad       (foldM)
@@ -12,8 +13,8 @@ import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState (..), NodeId)
 import qualified MNML.AST            as AST
-import qualified MNML.Type           as T
 import qualified MNML.Parser         as P
+import qualified MNML.Type           as T
 
 data UnificationError
   = UnknownVar NodeId
@@ -25,6 +26,7 @@ data UnificationError
   | ListInconsistentType NodeId
   | UnificationError NodeId NodeId
   | ParseError P.ParseError
+  deriving (Eq, Show)
 
 data UnificationState
   = UnificationState
@@ -48,9 +50,9 @@ exprType' (AST.EVar name nodeId) = do
   UnificationState {_bindings = b} <- get
   return $ maybe (Left (UnknownVar nodeId)) Right (b Map.!? name)
 
-exprType' (AST.EConstructor name nodeId) = do
-  UnificationState{_module = modu} <- get
-  return $ maybe (Left $ UnknownConstructor nodeId) Right (constructorFunType modu name)
+-- exprType' (AST.EConstructor name nodeId) = do
+--   UnificationState{_module = modu} <- get
+--   return $ maybe (Left $ UnknownConstructor nodeId) Right (constructorFunType modu name)
 
 exprType' (AST.ELit lit _) = return $ Right $ litType lit
 
@@ -63,7 +65,7 @@ exprType' (AST.ELambda args body _) = do
   let finalArgTypes = (_bindings finalState Map.!) <$> args
   return $ T.Fun finalArgTypes <$> bodyType
 
-exprType' (AST.EApp fun args nodeId)          = do
+exprType' (AST.EApp fun args nodeId) = do
   uniState <- get
   let funType = evalState (exprType' fun) uniState
   return $ case funType of
@@ -74,9 +76,14 @@ exprType' (AST.EApp fun args nodeId)          = do
                                                     else Right resType
              Right otherType                -> Left (NotFunctionType otherType nodeId)
 
-exprType' (AST.ECase _subj _branches _)    = _
-exprType' (AST.EBinary _op _left _right _) = _
-exprType' (AST.ERecord _fields _)          = _
+-- exprType' (AST.ECase _subj _branches _)    = _
+
+-- exprType' (AST.EBinary _op left right _) =
+--   -- This should be essentially the same as a function application
+--   _
+
+-- exprType' (AST.ERecord _fields _)          = _
+
 exprType' (AST.EList elems nodeId)             =
   let elemT = foldM (foldType nodeId) (Right T.Generic) elems
   in gets (evalState elemT)
@@ -120,7 +127,7 @@ valueDef modu valName = do
   -- TODO: Check cache, have a cache, etc
   cState <- get
   return $ case evalState (P.parse modu (_stateModules cState Map.! modu)) cState of
-             Right decls -> findDef valName decls
+             Right decls   -> findDef valName decls
              Left parseErr -> Left (ParseError parseErr)
   where
     findDef name decls =
@@ -129,5 +136,5 @@ valueDef modu valName = do
                    _ -> Nothing
                ) decls
 
-constructorFunType :: Text -> Text -> Maybe T.Type
-constructorFunType modu conName = _
+-- constructorFunType :: Text -> Text -> State CompilerState (Either UnificationError T.Type)
+-- constructorFunType modu conName = _

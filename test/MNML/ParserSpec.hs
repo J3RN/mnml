@@ -9,6 +9,7 @@ import qualified Data.Map            as Map
 import           Data.Text           (Text, pack, unlines)
 import           MNML                (CompilerState (..), NodeId,
                                       SourceSpan (..))
+import           MNML.AST
 import           MNML.Parser
 import           Test.Hspec
 import           Text.Parsec         (sourceColumn)
