@@ -66,8 +66,7 @@ exprType' (AST.ELambda args body _) = do
   return $ T.ConcreteType . T.Fun finalArgTypes <$> bodyType
 
 exprType' (AST.EApp fun args nodeId) = do
-  uniState <- get
-  let funType = evalState (exprType' fun) uniState
+  funType <- exprType' fun
   return $ case funType of
              Left err -> Left err
              Right (T.ConcreteType (T.Fun argTypes resType)) -> if length args > length argTypes then Left (TooManyArguments nodeId)
