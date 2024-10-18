@@ -1,6 +1,8 @@
 module MNML.Type
     ( ConcreteType (..)
+    , TraitId
     , Type (..)
+    , VarId
     ) where
 
 import           Data.Text

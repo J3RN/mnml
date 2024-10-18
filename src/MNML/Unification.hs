@@ -91,15 +91,15 @@ exprType' (AST.EList elems nodeId)             =
 -- This was meant to be a where, but I got a cryptic error
 foldType :: NodeId -> Either UnificationError T.Type -> AST.Expr -> State UnificationState (Either UnificationError T.Type)
 foldType nodeId t e =
-          if isLeft t then return t
-          else do
-            uniS <- get
-            let (elemT, newUniS) = runState (exprType' e) uniS
-            put newUniS
-            case (t, elemT) of
-              (Left err, _)        -> return $ Left err
-              (_, Left err)        -> return $ Left err
-              (Right t1, Right t2) -> return $ maybe (Left $ ListInconsistentType nodeId) Right (unify t1 t2)
+  if isLeft t then return t
+  else do
+    uniS <- get
+    let (elemT, newUniS) = runState (exprType' e) uniS
+    put newUniS
+    case (t, elemT) of
+      (Left err, _)        -> return $ Left err
+      (_, Left err)        -> return $ Left err
+      (Right t1, Right t2) -> return $ maybe (Left $ ListInconsistentType nodeId) Right (unify t1 t2)
 
 litType :: AST.Literal -> T.Type
 litType (AST.LInt _ _)    = T.ConcreteType T.Int
