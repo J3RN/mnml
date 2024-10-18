@@ -8,38 +8,43 @@ import           Control.Monad.State (State, lift, modify)
 import           Data.Functor        (($>))
 import qualified Data.Map            as Map
 import           Data.Text
-import           Lens.Micro          (over)
+import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState (..), NodeId,
                                       SourceSpan (..), stateSpans)
 import           MNML.AST            (Declaration (..), Expr (..), Literal (..),
                                       Operator (..), Pattern (..), Type (..))
 import           Text.Parsec         (ParseError, ParsecT, SourcePos, alphaNum,
                                       char, eof, getPosition, getState, lower,
-                                      many, many1, manyTill, oneOf, option,
-                                      putState, runParserT, sepBy1, space, try,
+                                      many, many1, manyTill, modifyState, oneOf,
+                                      option, runParserT, sepBy1, space, try,
                                       upper, (<|>))
 import qualified Text.Parsec.Token   as Tok
 
 -- Data Types
 
 newtype ParserEnv
-  = ParserEnv { nextId :: NodeId }
+  = ParserEnv { _nextId :: NodeId }
+
+nextId :: Lens' ParserEnv NodeId
+nextId = lens _nextId (\pe ni -> pe {_nextId = ni})
+
+initialEnv :: ParserEnv
+initialEnv = ParserEnv { _nextId = 0 }
 
 type Parser = ParsecT Text ParserEnv (State CompilerState)
 
 
 -- Client API
 parse :: Text -> Text -> State CompilerState (Either ParseError [Declaration])
-parse filename = runParserT MNML.Parser.mod (ParserEnv {nextId = 0}) (unpack filename)
+parse filename = runParserT MNML.Parser.mod initialEnv (unpack filename)
 
 -- Helpers
 
 -- Fix name later
 nodeIdPlusPlus :: Parser NodeId
 nodeIdPlusPlus = do
-  pe <- getState
-  let nodeId = nextId pe
-  putState (pe {nextId = nodeId + 1})
+  ParserEnv {_nextId = nodeId} <- getState
+  modifyState (over nextId (+ 1))
   return nodeId
 
 recordSpan :: SourcePos -> SourcePos -> NodeId -> Parser ()
