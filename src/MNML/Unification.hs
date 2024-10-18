@@ -61,7 +61,7 @@ exprType' (AST.ELambda args body _) = do
   let argTypes = Prelude.map (, T.Generic) args
       scopedUniState = over bindings (Map.union (Map.fromList argTypes)) uniState
       (bodyType, finalState) = runState (exprType' body) scopedUniState
-  -- put finalState
+  put finalState
   let finalArgTypes = (_bindings finalState Map.!) <$> args
   return $ T.ConcreteType . T.Fun finalArgTypes <$> bodyType
 
