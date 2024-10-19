@@ -1,5 +1,5 @@
 module MNML.Type
-    ( ConcreteType (..)
+    ( Constraint (..)
     , TraitId
     , Type (..)
     , VarId
@@ -11,11 +11,14 @@ import           MNML.AST  (NodeId)
 type VarId = Integer
 type TraitId = Integer
 
+data Constraint
+  = CType Type NodeId
+  -- | CEqual VarId VarId
 
 data Type
-  -- "User"
+  -- "User" (can be an alias or a user-defined type)
   = NamedType Text
-  -- Some type variable corresponding to an unaliased type
+  -- Generic type var "a"
   | Var Text VarId
   | Int
   | Float
