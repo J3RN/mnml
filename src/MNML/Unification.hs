@@ -12,7 +12,8 @@ import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe)
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over)
-import           MNML                (CompilerState (..), NodeId)
+import           MNML                (CompilerState (..))
+import           MNML.AST            (NodeId)
 import qualified MNML.AST            as AST
 import qualified MNML.Parser         as P
 import qualified MNML.Type           as T

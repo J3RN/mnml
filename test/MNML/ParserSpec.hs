@@ -15,7 +15,7 @@ import           Test.Hspec
 import           Text.Parsec         (sourceColumn)
 
 parse' :: Text -> (Either Text [Declaration], CompilerState)
-parse' source = first (first (pack . show)) (runState (parse "test.mnml" source) emptyState)
+parse' source = first (first (pack . show)) (runState parse "test" (emptyState { _modules = Map.fromList [("test", source)]}))
 
 spec :: Spec
 spec =

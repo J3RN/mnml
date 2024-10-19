@@ -2,13 +2,15 @@ module MNML.AST
     ( Declaration (..)
     , Expr (..)
     , Literal (..)
+    , NodeId
     , Operator (..)
     , Pattern (..)
     , Type (..)
     ) where
 
 import           Data.Text
-import           MNML      (NodeId)
+
+type NodeId = Integer
 
 data Declaration
   = TypeDecl Text [(Text, [Type])] NodeId -- "MyType = Foo(String) | Bar(Int, String)"

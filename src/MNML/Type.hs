@@ -6,6 +6,7 @@ module MNML.Type
     ) where
 
 import           Data.Text
+import           MNML.AST  (NodeId)
 
 type VarId = Integer
 type TraitId = Integer
