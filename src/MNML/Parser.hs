@@ -4,15 +4,16 @@ module MNML.Parser
     ) where
 
 import           Control.Monad       (foldM)
-import           Control.Monad.State (State, lift, modify)
+import           Control.Monad.State (State, gets, lift, modify)
 import           Data.Functor        (($>))
 import qualified Data.Map            as Map
 import           Data.Text
 import           Lens.Micro          (Lens', lens, over)
-import           MNML                (CompilerState (..), NodeId,
-                                      SourceSpan (..), stateSpans)
+import           MNML                (CompilerState (..), SourceSpan (..),
+                                      stateSpans)
 import           MNML.AST            (Declaration (..), Expr (..), Literal (..),
-                                      Operator (..), Pattern (..), Type (..))
+                                      NodeId, Operator (..), Pattern (..),
+                                      Type (..))
 import           Text.Parsec         (ParseError, ParsecT, SourcePos, alphaNum,
                                       char, eof, getPosition, getState, lower,
                                       many, many1, manyTill, modifyState, oneOf,
@@ -35,8 +36,12 @@ type Parser = ParsecT Text ParserEnv (State CompilerState)
 
 
 -- Client API
-parse :: Text -> Text -> State CompilerState (Either ParseError [Declaration])
-parse filename = runParserT MNML.Parser.mod initialEnv (unpack filename)
+parse :: Text -> State CompilerState (Either ParseError [Declaration])
+parse modu = do
+  moduleTextResult <- gets ((Map.!? modu) . _modules)
+  case moduleTextResult of
+    Just rawCode -> runParserT MNML.Parser.mod initialEnv (unpack $ modu <> ".mnml") rawCode
+    Nothing -> runParserT (fail $ mconcat ["File '", unpack modu <> ".mnml'", " not loaded"]) initialEnv (unpack $ modu <> ".mnml") empty
 
 -- Helpers
 
