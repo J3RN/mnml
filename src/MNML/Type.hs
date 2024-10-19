@@ -11,16 +11,13 @@ import           MNML.AST  (NodeId)
 type VarId = Integer
 type TraitId = Integer
 
-data Type
-  = ConcreteType ConcreteType
-  | NamedType Text -- "User"
-  | Var Text VarId -- "a"
-  | Generic
-  | Trait TraitId -- A type that implements a trait (concrete type unknown)
-  deriving (Eq, Show)
 
-data ConcreteType
-  = Int
+data Type
+  -- "User"
+  = NamedType Text
+  -- Some type variable corresponding to an unaliased type
+  | Var Text VarId
+  | Int
   | Float
   | Char
   | String
