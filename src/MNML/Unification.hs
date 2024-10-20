@@ -4,11 +4,10 @@ module MNML.Unification
     ) where
 
 import           Control.Monad       (foldM)
-import           Control.Monad.State (State, StateT, evalState, get, gets,
-                                      modify, put, runState, state)
-import           Data.Bifunctor      (first, second)
+import           Control.Monad.State (State, StateT, get, gets, modify, put,
+                                      runState, state)
+import           Data.Bifunctor      (first)
 import           Data.Either         (isLeft)
-import           Data.Functor        (($>))
 import           Data.Map            (Map, (!), (!?))
 import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe)
@@ -32,9 +31,11 @@ data UnificationError
   | ParseError P.ParseError
   deriving (Eq, Show)
 
+type Bindings = Map Text [T.Constraint]
+
 data UnificationState
   = UnificationState
-      { _bindings  :: Map Text T.Type
+      { _bindings  :: Bindings
       , _module    :: Text
       , _nextVarId :: T.VarId
       }
@@ -45,7 +46,7 @@ initialEnv modu = UnificationState { _bindings = Map.empty
                                    , _nextVarId = 0
                                    }
 
-bindings :: Lens' UnificationState (Map Text T.Type)
+bindings :: Lens' UnificationState Bindings
 bindings = lens _bindings (\us bin -> us {_bindings = bin})
 
 constrain :: AST.Expr -> Unify [T.Constraint]
@@ -89,7 +90,7 @@ exprType' (AST.EApp fun args nodeId) = do
 -- exprType' (AST.ERecord _fields _)          = _
 
 exprType' (AST.EList elems nodeId) = do
-  typeVar <- addTypeVar "a"
+  typeVar <- freshTypeVar "a"
   foldM (foldType nodeId) (Right typeVar) elems
 type Unify a = StateT UnificationState (State CompilerState) a
 
@@ -108,12 +109,12 @@ foldType nodeId t e =
 
 populateVariableBindings :: [Text] -> Unify ()
 populateVariableBindings args = do
-  typeVars <- mapM (\arg -> (arg,) <$> addTypeVar arg) args
+  typeVars <- mapM (\arg -> (arg,) <$> freshTypeVar arg) args
   modify (over bindings (Map.union (Map.fromList typeVars)))
 
-addTypeVar :: Text -> Unify T.Type
-addTypeVar name = state (addTypeVar' name)
-  where addTypeVar' n s =
+freshTypeVar :: Text -> Unify T.Type
+freshTypeVar name = state (freshTypeVar' name)
+  where freshTypeVar' n s =
           let newTVId = _nextVarId s
           in (T.Var n newTVId, s { _nextVarId = newTVId + 1 })
 
@@ -122,27 +123,6 @@ litType (AST.LInt _ _)    =  T.Int
 litType (AST.LFloat _ _)  =  T.Float
 litType (AST.LChar _ _)   =  T.Char
 litType (AST.LString _ _) =  T.String
-
--- Unify an expression with a type
-unify' :: AST.Expr -> T.Type -> Unify (Either UnificationError T.Type)
-unify' (AST.EVar name nodeId) t = do
-  uniState <- get
-  let boundType = _bindings uniState !? name
-  case boundType of
-    Just t2 -> case unify nodeId t2 t of
-      Right uniType -> rebind name uniType $> Right uniType
-      Left err      -> return $ Left err
-    Nothing -> return $ Left (UnknownVar nodeId)
-
-unify' (AST.EConstructor name nodeId) t = do
-  modu <- gets _module
-  cLookupRes <- constructorFunType modu name
-  return $ cLookupRes >>= (\cType -> unify nodeId cType t)
-
-unify' (AST.ELit lit nodeId) t =
-  return $ unify nodeId (litType lit) t
-
--- unify' ()
 
 rebind :: Text -> T.Type -> Unify ()
 rebind name t = modify (over bindings (Map.insert name t))
@@ -158,7 +138,7 @@ unify nodeId t1 t2    = Left (UnificationError t1 t2 nodeId)
 valueType :: Text -> Text -> Unify (Either UnificationError T.Type)
 valueType modu valName =
    valueDef modu valName >>= (\case
-                                 Right expr -> addTypeVar valName >>= unify' expr
+                                 Right expr -> freshTypeVar valName >>= unify' expr
                                  Left parseErr -> pure $ Left parseErr
                              )
 
@@ -204,7 +184,7 @@ typify (AST.TList t _)               = T.List <$> typify t
 typify (AST.TFun argTypes resType _) = T.Fun <$> mapM typify argTypes <*> typify resType
 -- There might be a more elegant way, not sure
 typify (AST.TRecord fields _)        = T.Record <$> mapM (\(name, aType) -> (name,) <$> typify aType) fields
-typify (AST.TVar name _)             = addTypeVar name
+typify (AST.TVar name _)             = freshTypeVar name
 
 -- TODO: Cache module definitions here
 moduleDef :: Text -> Unify (Either UnificationError [AST.Declaration])
