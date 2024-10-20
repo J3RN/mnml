@@ -11,12 +11,9 @@ module MNML
 import           Data.Map    (Map)
 import qualified Data.Map    as Map
 import           Data.Text   (Text)
-
 import           Lens.Micro  (Lens', lens)
-
 import           MNML.AST    (NodeId)
 import           MNML.Type   (Type)
-
 import           Text.Parsec (SourcePos)
 
 data SourceSpan
@@ -29,7 +26,9 @@ data SourceSpan
 -- The compiler state, contains various information about terms, etc
 
 type Modules = Map Text Text
+
 type Spans = Map NodeId SourceSpan
+
 type Types = Map NodeId Type
 
 data CompilerState
@@ -41,10 +40,12 @@ data CompilerState
   deriving (Eq, Show)
 
 emptyState :: CompilerState
-emptyState = CompilerState { _spans = Map.empty
-                           , _modules = Map.empty
-                           , _types = Map.empty
-                           }
+emptyState =
+  CompilerState
+    { _spans = Map.empty,
+      _modules = Map.empty,
+      _types = Map.empty
+    }
 
 -- Assorted lenses
 

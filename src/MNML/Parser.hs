@@ -30,10 +30,9 @@ nextId :: Lens' ParserEnv NodeId
 nextId = lens _nextId (\pe ni -> pe {_nextId = ni})
 
 initialEnv :: ParserEnv
-initialEnv = ParserEnv { _nextId = 0 }
+initialEnv = ParserEnv {_nextId = 0}
 
 type Parser = ParsecT Text ParserEnv (State CompilerState)
-
 
 -- Client API
 parse :: Text -> State CompilerState (Either ParseError [Declaration])
@@ -190,14 +189,21 @@ appExpr :: Parser Expr
 appExpr = do
   start <- getPosition
   func <- primaryExpr
-  apps <- many1 (do{ params <- parens (commaSep expression);
-                     end <- getPosition;
-                     return (params, end)
-                   })
-  foldM (\expr (params, end) -> do{ nodeId <- nodeIdPlusPlus;
-                                     recordSpan start end nodeId;
-                                     return $ EApp expr params nodeId
-                                   }) func apps
+  apps <-
+    many1
+      ( do
+          params <- parens (commaSep expression)
+          end <- getPosition
+          return (params, end)
+      )
+  foldM
+    ( \expr (params, end) -> do
+        nodeId <- nodeIdPlusPlus
+        recordSpan start end nodeId
+        return $ EApp expr params nodeId
+    )
+    func
+    apps
 
 binaryExpr :: Parser Expr
 binaryExpr =
@@ -222,14 +228,15 @@ captureChainl1 p op =
     x <- p
     rest start x
   where
-    rest start x = do{ nodeId <- nodeIdPlusPlus;
-                       f <- op;
-                       y <- p;
-                       end <- getPosition;
-                       recordSpan start end nodeId;
-                       let res = f x y nodeId in rest start res
-                     }
-                    <|> return x
+    rest start x =
+      do
+        nodeId <- nodeIdPlusPlus
+        f <- op
+        y <- p
+        end <- getPosition
+        recordSpan start end nodeId
+        let res = f x y nodeId in rest start res
+        <|> return x
 
 recordExpr :: Parser Expr
 recordExpr = do
