@@ -28,6 +28,7 @@ library
       MNML
       MNML.AST
       MNML.Parser
+      MNML.Pattern
       MNML.Type
       MNML.Unification
   other-modules:

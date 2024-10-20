@@ -6,14 +6,19 @@ module MNML.Type
     ) where
 
 import           Data.Text
-import           MNML.AST  (NodeId)
+import           MNML.AST     (NodeId)
+import           MNML.Pattern (Pattern)
 
 type VarId = Integer
+
 type TraitId = Integer
 
 data Constraint
-  = CType Type NodeId
-  -- | CEqual VarId VarId
+  -- CEqual Expected Actual
+  = CEqual Type Type NodeId
+  | CPattern Type Pattern NodeId
+  -- Weak sauce pre-trait constaint
+  | CNumeric Type NodeId
 
 data Type
   -- "User" (can be an alias or a user-defined type)
