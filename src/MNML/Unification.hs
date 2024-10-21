@@ -220,6 +220,6 @@ typify (AST.TRecord fields _) = T.Record <$> mapM (\(name, aType) -> (name,) <$>
 typify (AST.TVar name _) = freshTypeVar name
 
 -- TODO: Cache module definitions here
-moduleDef :: Text -> CompilerState (Either UnificationError [AST.Declaration])
+moduleDef :: Text -> State CompilerState (Either UnificationError [AST.Declaration])
 moduleDef modu = do
-  (first ParseError <$> P.parse modu)
+  first ParseError <$> P.parse modu
