@@ -16,17 +16,18 @@ type TraitId = Integer
 data Constraint
   -- CEqual Expected Actual
   = CEqual Type Type NodeId
-  | CPattern Type Pattern NodeId
-  -- Weak sauce pre-trait constaint
-  | CNumeric Type NodeId
+  -- | CPattern Type Pattern NodeId
 
 data Type
   -- "User" (can be an alias or a user-defined type)
-  = NamedType Text
+  = TypeAlias Text
+  | AlgebraicType Text
   -- Generic type var "a"
   | Var Text VarId
   | Int
   | Float
+  -- Weak sauce "I implement trait type"
+  | Numeric
   | Char
   | String
   | List Type
