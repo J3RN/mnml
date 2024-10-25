@@ -38,7 +38,7 @@ spec =
     describe "lambdas" $ do
       it "unifies nullary lambdas" $ do
         let (res, cs) = unify' "main = () => { 1 }"
-        res `shouldBe` Right (T.Fun [] ( T.Int))
+        res `shouldBe` Right (T.Fun [] (T.Int))
 
       it "unifies identity" $ do
         let (res, cs) = unify' "main = (x) => { x }"

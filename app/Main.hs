@@ -4,14 +4,11 @@ module Main
 
 import           Control.Exception   (try)
 import           Control.Monad.State (evalState)
-
 import           Data.Either         (fromRight)
 import qualified Data.Map            as Map
 import           Data.Text           (Text, pack)
 import qualified Data.Text.IO        as TIO
-
 import           MNML                (CompilerState (..), Modules, emptyState)
-
 import           System.Directory    (listDirectory)
 import           System.FilePath     (dropExtension, isExtensionOf)
 

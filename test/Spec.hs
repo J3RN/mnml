@@ -1,5 +1,5 @@
-import qualified MNML.UnificationSpec as UnificationSpec
 import qualified MNML.ParserSpec as ParserSpec
+import qualified MNML.UnificationSpec as UnificationSpec
 import Test.Hspec
 
 main :: IO ()
