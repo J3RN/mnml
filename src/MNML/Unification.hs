@@ -3,11 +3,12 @@ module MNML.Unification
     , valueType
     ) where
 
+import Debug.Trace (trace)
 import           Control.Monad.State (State, StateT, evalStateT, gets, lift,
-                                      modify, state)
+                                      modify, state, runState)
 import           Data.Bifunctor      (first, second)
 import           Data.Function       (on)
-import           Data.Map            (Map, (!), (!?))
+import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe, fromMaybe)
 import           Data.Text           (Text)
@@ -77,7 +78,7 @@ constrain (AST.EConstructor name _nodeId) = do
     Right expectedType -> return (expectedType, [])
 constrain (AST.ELit lit _nodeId) =
   return (litType lit, [])
-constrain (AST.ELambda args body _nodeId) = do
+constrain (AST.ELambda args body nodeId) = do
   oldBindings <- gets _bindings
   -- Fresh argument type bindings
   argVars <- mapM (\arg -> (arg,) <$> freshTypeVar arg) args
@@ -86,7 +87,8 @@ constrain (AST.ELambda args body _nodeId) = do
   (bt, bc) <- constrain body
   -- Restore bindings
   modify (set bindings oldBindings)
-  return (T.Fun (map snd argVars) bt, bc)
+  (\v -> (v , T.CEqual v (T.Fun (map snd argVars) bt) nodeId : bc)) <$> freshTypeVar "fun"
+  -- return (T.Fun (map snd argVars) bt, bc)
 constrain (AST.EApp funExpr argExprs nodeId) = do
   (funType, fc) <- constrain funExpr
   argResults <- mapM constrain argExprs
@@ -107,7 +109,8 @@ constrain (AST.EBinary _op left right nodeId) = do
   let retConstraint = T.CEqual T.Numeric resVar nodeId
       lConstraint = T.CEqual T.Numeric lType nodeId
       rConstraint = T.CEqual T.Numeric rType nodeId
-  return (resVar, retConstraint : lConstraint : rConstraint : lConstraints ++ rConstraints)
+      consistencyConstraint = T.CEqual lType rType nodeId
+  return (resVar, retConstraint : lConstraint : rConstraint : consistencyConstraint : lConstraints ++ rConstraints)
 constrain (AST.ERecord fields _nodeId) = do
   fieldResults <- mapM constrain (snd <$> fields)
   let typedFields = zip (fst <$> fields) (fst <$> fieldResults)
@@ -137,15 +140,15 @@ type Subst = Map T.Type T.Type
 
 -- Unify a set of constraints
 
-unify :: [T.Constraint] -> Either UnificationError Subst
-unify [] = Right Map.empty
+unify :: [T.Constraint] -> State Subst (Maybe UnificationError)
+unify [] = return Nothing
 -- Delete rule
 unify ((T.CEqual t1 t2 _) : cs) | t1 == t2 = unify cs
 -- Decompose rules
 unify ((T.CEqual (T.List a) (T.List b) nodeId) : cs) = unify (T.CEqual a b nodeId : cs)
 unify ((T.CEqual (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2) nodeId) : cs) =
   if length argTypes1 /= length argTypes2
-    then Left (ArgumentLengthMismatch nodeId)
+    then return (Just (ArgumentLengthMismatch nodeId))
     else
       let retCon = T.CEqual retType1 retType2 nodeId
           argTypeCons = zipWith (\t1 t2 -> T.CEqual t1 t2 nodeId) argTypes1 argTypes2
@@ -164,25 +167,31 @@ unify ((T.CEqual t T.Numeric nodeId) : cs) = unify (T.CEqual T.Numeric t nodeId 
 unify ((T.CEqual T.Numeric T.Float _) : cs) = unify cs
 unify ((T.CEqual T.Numeric T.Int _) : cs) = unify cs
 -- Conflict
-unify ((T.CEqual t1 t2 nodeId) : _) = Left (UnificationError t1 t2 nodeId)
+unify ((T.CEqual t1 t2 nodeId) : _) = return (Just (UnificationError t1 t2 nodeId))
 
 intersectWith :: (Ord a) => (b -> b -> c) -> [(a, b)] -> [(a, b)] -> [(a, c)]
 intersectWith comb a b = Map.toList $ (Map.intersectionWith comb `on` Map.fromList) a b
 
-bind :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> Either UnificationError Subst
+bind :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> State Subst (Maybe UnificationError)
 bind nodeId var t cs =
   if var `occursIn` t
-    then Left (OccursError var t nodeId)
-    else
-      Map.insert var t
-        <$> unify
-          ( ( \case
-                (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
-            )
-              <$> cs
-          )
+    then return (Just (OccursError var t nodeId))
+    else do
+      -- let _ = trace "replacing" subst
+      modify (eliminateAndInsert var t)
+      unify ( ( \case
+                  (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
+              ) <$> cs)
   where
     subst = (var, t)
+    eliminateAndInsert :: T.Type -> T.Type -> Subst -> Subst
+    eliminateAndInsert src target = (\m -> trace (mconcat ["Substs: ", show m]) m) <$> Map.insert src target . Map.map (eliminate src target)
+    eliminate :: T.Type -> T.Type -> T.Type -> T.Type
+    eliminate src target substType | substType == src = target
+    eliminate src target (T.List substElemType) = T.List (eliminate src target substElemType)
+    eliminate src target (T.Fun argTypes retType) = T.Fun (eliminate src target <$> argTypes) (eliminate src target retType)
+    eliminate src target (T.Record fieldSpec) = T.Record (second (eliminate src target) <$> fieldSpec)
+    eliminate _ _ substType = substType
 
 occursIn :: T.Type -> T.Type -> Bool
 -- Type aliases currently have to be qualified, so no vars
@@ -224,9 +233,9 @@ valueType modu valName = do
       evalStateT
         ( do
             (inferType, constraints) <- constrain expr
-            case unify constraints of
-              Left err    -> return (Left err)
-              Right subst -> return (Right (fromMaybe inferType (subst !? inferType)))
+            case runState (unify (trace (mconcat ["Constraints: ", show constraints]) constraints)) Map.empty of
+              (Just err, _)    -> return (Left err)
+              (Nothing, subst) -> return (Right (fromMaybe inferType (subst !? inferType)))
         )
         (initialEnv modu)
     Left parseErr -> return (Left parseErr)

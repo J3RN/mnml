@@ -17,6 +17,7 @@ data Constraint
   -- CEqual Expected Actual
   = CEqual Type Type NodeId
   -- | CPattern Type Pattern NodeId
+  deriving (Show)
 
 data Type
   -- "User" (can be an alias or a user-defined type)

@@ -37,13 +37,17 @@ spec =
 
     describe "lambdas" $ do
       it "unifies nullary lambdas" $ do
-        let (res, cs) = unify' "main = () => { 1 }"
+        let (res, _cs) = unify' "main = () => { 1 }"
         res `shouldBe` Right (T.Fun [] T.Int)
 
       it "unifies identity" $ do
-        let (res, cs) = unify' "main = (x) => { x }"
+        let (res, _cs) = unify' "main = (x) => { x }"
         res `shouldBe` Right (T.Fun [T.Var "x" 0] (T.Var "x" 0))
 
       it "infers parameter types" $ do
-        let (res, cs) = unify' "main = (x) => { x + 42 }"
-        res `shouldBe` Right (T.Fun [T.Int] T.Int)
+        let (res, _cs) = unify' "main = (x) => { x + 42 }"
+        res `shouldBe` Right (T.Fun [T.Numeric] T.Numeric)
+
+      it "infers (float) parameter type" $ do
+        let (res, _cs) = unify' "main = (x) => { x + 3.14 }"
+        res `shouldBe` Right (T.Fun [T.Float] T.Float)
