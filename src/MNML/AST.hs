@@ -14,7 +14,7 @@ type NodeId = Integer
 
 data Declaration
   = TypeDecl Text [(Text, [Type])] NodeId -- "MyType = Foo(String) | Bar(Int, String)"
-  | TypeAliasDecl Text [(Text, Type)] NodeId -- "alias Foo = " ... ???
+  | TypeAliasDecl Text Type NodeId -- "alias User = {name: String}" or "alias Price = Int"
   | ValueDecl Text Expr NodeId
   deriving (Eq, Show)
 

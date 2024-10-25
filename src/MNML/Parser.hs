@@ -94,8 +94,8 @@ typeAliasDecl = captureSpan $ do
   _ <- reserved "alias"
   name <- typeIdentifier
   _ <- equal
-  fields <- braces (commaSep fieldDecl)
-  return $ TypeAliasDecl name fields
+  expansionType <- pType
+  return (TypeAliasDecl name expansionType)
 
 valueDecl :: Parser Declaration
 valueDecl = captureSpan $ do
