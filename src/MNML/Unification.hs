@@ -8,8 +8,7 @@ import           Control.Monad.State (State, StateT, get, gets, lift, modify,
                                       put, runState, state)
 import           Data.Bifunctor      (first, second)
 import           Data.Function       (on)
-import qualified Data.List           as List
-import           Data.Map            (Map, (!?))
+import           Data.Map            (Map, (!), (!?))
 import qualified Data.Map            as Map
 import           Data.Maybe          (catMaybes, listToMaybe, mapMaybe)
 import           Data.Text           (Text)
@@ -134,7 +133,7 @@ litType (AST.LFloat _ _)  = T.Float
 litType (AST.LChar _ _)   = T.Char
 litType (AST.LString _ _) = T.String
 
-type Subst = Map T.VarId T.Type
+type Subst = Map T.Type T.Type
 
 -- Unify a set of constraints
 
@@ -176,7 +175,7 @@ bind nodeId var t cs =
   then Left (OccursError var t nodeId)
   else unify $ (\case
                  (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
-             ) <$> cs
+               ) <$> cs
   where subst = (var, t)
 
 occursIn :: T.Type -> T.Type -> Bool
@@ -212,15 +211,15 @@ applySubst subst (T.Record fieldSpec) = T.Record $ second (applySubst subst) <$>
 -- I think the play here is to use these State CompilerState ... to implement the cache (by allowing them to populate a cache in CompilerState)
 
 valueType :: Text -> Text -> State CompilerState (Either UnificationError T.Type)
-valueType modu valName =
-  valueDef modu valName
-    >>= ( \case
-            Right expr -> do
-              (inferType, constraints) <- constrain expr
-              let subst = unify constraints
-              return (applySubst subst inferType)
-            Left parseErr -> pure $ Left parseErr
-        )
+valueType modu valName = do
+  valDef <- valueDef modu valName
+  case valDef of
+    Right expr -> evalStateT (do
+      (inferType, constraints) <- constrain expr
+      case unify constraints of
+        Left err -> return (Left err)
+        Right subst -> return (Right (subst ! inferType))) (initialEnv modu)
+    Left parseErr -> return (Left parseErr)
 
 valueDef :: Text -> Text -> State CompilerState (Either UnificationError AST.Expr)
 valueDef modu valName = do
