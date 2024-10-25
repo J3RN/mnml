@@ -3,14 +3,13 @@ module MNML.Unification
     , valueType
     ) where
 
-import           Control.Monad       (foldM)
-import           Control.Monad.State (State, StateT, get, gets, lift, modify,
-                                      put, runState, state)
+import           Control.Monad.State (State, StateT, evalStateT, gets, lift,
+                                      modify, state)
 import           Data.Bifunctor      (first, second)
 import           Data.Function       (on)
 import           Data.Map            (Map, (!), (!?))
 import qualified Data.Map            as Map
-import           Data.Maybe          (catMaybes, listToMaybe, mapMaybe)
+import           Data.Maybe          (listToMaybe, mapMaybe, fromMaybe)
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
 import           MNML                (CompilerState (..))
@@ -22,6 +21,7 @@ data UnificationError
   = UnknownVar AST.NodeId
   | UnknownVal Text
   | UnknownConstructor Text
+  | UnknownType Text -- AST.NodeId
   | ArgumentLengthMismatch AST.NodeId
   | UnificationError T.Type T.Type AST.NodeId
   | OccursError T.Type T.Type AST.NodeId
@@ -95,10 +95,11 @@ constrain (AST.EApp funExpr argExprs nodeId) = do
   retType <- freshTypeVar "ret"
   let functionConstraint = T.CEqual (T.Fun argTypes retType) funType nodeId
   return (retType, functionConstraint : fc ++ argConstraints)
-constrain (AST.ECase subj branches _nodeId) = do
-  (subjType, subjConstraints) <- constrain subj
-  -- return ()
-  _
+-- constrain (AST.ECase subj branches _nodeId) = do
+--   (subjType, subjConstraints) <- constrain subj
+--   -- return ()
+-- _
+
 constrain (AST.EBinary _op left right nodeId) = do
   (lType, lConstraints) <- constrain left
   (rType, rConstraints) <- constrain right
@@ -112,7 +113,6 @@ constrain (AST.ERecord fields _nodeId) = do
   let typedFields = zip (fst <$> fields) (fst <$> fieldResults)
       fieldConstraints = concatMap snd fieldResults
   return (T.Record typedFields, fieldConstraints)
-
 constrain (AST.EList elems nodeId) = do
   elemResults <- mapM constrain elems
   elemType <- freshTypeVar "elem"
@@ -140,43 +140,49 @@ type Subst = Map T.Type T.Type
 unify :: [T.Constraint] -> Either UnificationError Subst
 unify [] = Right Map.empty
 -- Delete rule
-unify ((T.CEqual t1 t2 _):cs) | t1 == t2 = unify cs
+unify ((T.CEqual t1 t2 _) : cs) | t1 == t2 = unify cs
 -- Decompose rules
-unify ((T.CEqual (T.List a) (T.List b) nodeId):cs) = unify (T.CEqual a b nodeId:cs)
-unify ((T.CEqual (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2) nodeId):cs) =
+unify ((T.CEqual (T.List a) (T.List b) nodeId) : cs) = unify (T.CEqual a b nodeId : cs)
+unify ((T.CEqual (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2) nodeId) : cs) =
   if length argTypes1 /= length argTypes2
-  then Left (ArgumentLengthMismatch nodeId)
-  else let retCon = T.CEqual retType1 retType2 nodeId
-           argTypeCons = zipWith (\t1 t2 -> T.CEqual t1 t2 nodeId) argTypes1 argTypes2
-       in unify (retCon:(argTypeCons ++ cs))
-unify ((T.CEqual (T.Record fieldSpec1) (T.Record fieldSpec2) nodeId):cs) =
+    then Left (ArgumentLengthMismatch nodeId)
+    else
+      let retCon = T.CEqual retType1 retType2 nodeId
+          argTypeCons = zipWith (\t1 t2 -> T.CEqual t1 t2 nodeId) argTypes1 argTypes2
+       in unify (retCon : (argTypeCons ++ cs))
+unify ((T.CEqual (T.Record fieldSpec1) (T.Record fieldSpec2) nodeId) : cs) =
   let commonFields = intersectWith (,) fieldSpec1 fieldSpec2
       fieldConstraints = (\(_, (t1, t2)) -> T.CEqual t1 t2 nodeId) <$> commonFields
-  in unify (fieldConstraints ++ cs)
--- Swap
-unify ((T.CEqual t var@(T.Var _ _) nodeId):cs) = unify (T.CEqual var t nodeId:cs)
--- Numeric swap
-unify ((T.CEqual t T.Numeric nodeId):cs) = unify (T.CEqual T.Numeric t nodeId:cs)
+   in unify (fieldConstraints ++ cs)
 -- Eliminate
-unify ((T.CEqual var@(T.Var _ _) t nodeId):cs) = bind nodeId var t cs
+unify ((T.CEqual var@(T.Var _ _) t nodeId) : cs) = bind nodeId var t cs
+-- Swap
+unify ((T.CEqual t var@(T.Var _ _) nodeId) : cs) = unify (T.CEqual var t nodeId : cs)
+-- Numeric swap
+unify ((T.CEqual t T.Numeric nodeId) : cs) = unify (T.CEqual T.Numeric t nodeId : cs)
 -- Numeric elimination
-unify ((T.CEqual T.Numeric T.Float _):cs) = unify cs
-unify ((T.CEqual T.Numeric T.Int _):cs) = unify cs
+unify ((T.CEqual T.Numeric T.Float _) : cs) = unify cs
+unify ((T.CEqual T.Numeric T.Int _) : cs) = unify cs
 -- Conflict
-unify ((T.CEqual t1 t2 nodeId):_) = Left (UnificationError t1 t2 nodeId)
--- unify ((T.CPattern _ _ _):cs)  = _
+unify ((T.CEqual t1 t2 nodeId) : _) = Left (UnificationError t1 t2 nodeId)
 
-intersectWith :: (b -> b -> c) -> [(a, b)] -> [(a, b)] -> [(a, c)]
+intersectWith :: (Ord a) => (b -> b -> c) -> [(a, b)] -> [(a, b)] -> [(a, c)]
 intersectWith comb a b = Map.toList $ (Map.intersectionWith comb `on` Map.fromList) a b
 
 bind :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> Either UnificationError Subst
 bind nodeId var t cs =
   if var `occursIn` t
-  then Left (OccursError var t nodeId)
-  else unify $ (\case
-                 (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
-               ) <$> cs
-  where subst = (var, t)
+    then Left (OccursError var t nodeId)
+    else
+      Map.insert var t
+        <$> unify
+          ( ( \case
+                (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
+            )
+              <$> cs
+          )
+  where
+    subst = (var, t)
 
 occursIn :: T.Type -> T.Type -> Bool
 -- Type aliases currently have to be qualified, so no vars
@@ -185,11 +191,11 @@ occursIn _ (T.TypeAlias _) = False
 occursIn _ (T.AlgebraicType _) = False
 occursIn var1 var2 | var1 == var2 = True
 occursIn _ (T.Var _ _) = False
-occursIn _ T.Int       = False
-occursIn _ T.Float     = False
-occursIn _ T.Char      = False
-occursIn _ T.String    = False
-occursIn _ T.Numeric   = False
+occursIn _ T.Int = False
+occursIn _ T.Float = False
+occursIn _ T.Char = False
+occursIn _ T.String = False
+occursIn _ T.Numeric = False
 occursIn var (T.List elemType) = var `occursIn` elemType
 occursIn var (T.Fun argTypes retType) = any (var `occursIn`) argTypes || var `occursIn` retType
 occursIn var (T.Record fieldSpec) = any ((var `occursIn`) . snd) fieldSpec
@@ -214,11 +220,15 @@ valueType :: Text -> Text -> State CompilerState (Either UnificationError T.Type
 valueType modu valName = do
   valDef <- valueDef modu valName
   case valDef of
-    Right expr -> evalStateT (do
-      (inferType, constraints) <- constrain expr
-      case unify constraints of
-        Left err -> return (Left err)
-        Right subst -> return (Right (subst ! inferType))) (initialEnv modu)
+    Right expr ->
+      evalStateT
+        ( do
+            (inferType, constraints) <- constrain expr
+            case unify constraints of
+              Left err    -> return (Left err)
+              Right subst -> return (Right (fromMaybe inferType (subst !? inferType)))
+        )
+        (initialEnv modu)
     Left parseErr -> return (Left parseErr)
 
 valueDef :: Text -> Text -> State CompilerState (Either UnificationError AST.Expr)
@@ -242,22 +252,30 @@ constructorFunType modu conName = do
     Left err    -> return $ Left err
     Right decls -> findConType decls
   where
+    findConType :: [AST.Declaration] -> Unify (Either UnificationError T.Type)
     findConType decls =
-      maybe (Left $ UnknownConstructor conName) Right . listToMaybe . catMaybes
+      foldl (<>) (Left (UnknownConstructor conName))
         <$> mapM
           ( \case
-              (AST.TypeDecl tName constructors _) -> findConType' tName constructors
-              _ -> pure Nothing
+              (AST.TypeDecl tName constructors _) -> conTypeFromConstructors conName tName constructors
+              _ -> (return (Left (UnknownConstructor conName)))
           )
           decls
-    findConType' tName constructors = do
-      listToMaybe . catMaybes
-        <$> mapM
-          ( \case
-              (cName, argTypes) | cName == conName -> Just <$> (T.Fun <$> mapM typify argTypes <*> pure (T.AlgebraicType tName))
-              _ -> pure Nothing
-          )
-          constructors
+
+conTypeFromConstructors :: Text -> Text -> [(Text, [AST.Type])] -> Unify (Either UnificationError T.Type)
+conTypeFromConstructors conName tName constructors = do
+  foldl (<>) (Left (UnknownConstructor conName))
+    <$> mapM
+      ( \case
+          (cName, argTypes) | cName == conName -> typifyConstructor argTypes tName
+          _ -> return (Left (UnknownConstructor conName))
+      )
+      constructors
+
+typifyConstructor :: [AST.Type] -> Text -> Unify (Either UnificationError T.Type)
+typifyConstructor argTypes tName = do
+  typifiedTypes <- mapM typify argTypes
+  return $ T.Fun <$> sequence typifiedTypes <*> return (T.AlgebraicType tName)
 
 findMaybe :: (a -> Maybe b) -> [a] -> Maybe b
 findMaybe f = listToMaybe . mapMaybe f
@@ -268,21 +286,36 @@ typify (AST.TFloat _) = return (Right T.Float)
 typify (AST.TChar _) = return (Right T.Char)
 typify (AST.TString _) = return (Right T.String)
 typify (AST.TNamedType name _) = do
-  maybeT <- lift (moduleNamedType name)
-  case maybeT of
-    Just t  -> return (Right t)
-    Nothing -> _
+  modName <- gets _module
+  moduleNamedType modName name
 typify (AST.TList t _) = (T.List <$>) <$> typify t
 typify (AST.TFun argTypes resType _) = do
   maybeArgTypes <- mapM typify argTypes
   maybeResType <- typify resType
   return (T.Fun <$> sequence maybeArgTypes <*> maybeResType)
 -- There might be a more elegant way, not sure
-typify (AST.TRecord fields _) = Right . T.Record <$> mapM (\(name, aType) -> (name,) <$> typify aType) fields
+typify (AST.TRecord fields _) = do
+  fieldTypes <- mapM (\(name, aType) -> ((name,) <$>) <$> typify aType) fields
+  return $ T.Record <$> sequence fieldTypes
 typify (AST.TVar name _) = Right <$> freshTypeVar name
 
-moduleNamedType :: Text -> State CompilerState (Maybe T.Type)
-moduleNamedType name = gets (_)
+moduleNamedType :: Text -> Text -> Unify (Either UnificationError T.Type)
+moduleNamedType modu typeName = do
+  mDefRes <- lift (moduleDef modu)
+  case mDefRes of
+    Right mDef -> findDef typeName mDef
+    Left _     -> return (Left (UnknownType typeName))
+  where
+    findDef :: Text -> [AST.Declaration] -> Unify (Either UnificationError T.Type)
+    findDef name decls =
+      foldl (<>) (Left (UnknownType typeName))
+        <$> mapM
+          ( \case
+              (AST.TypeDecl n _ _) | n == name -> return (Right (T.AlgebraicType n))
+              (AST.TypeAliasDecl n t _) | n == name -> typify t
+              _ -> return (Left (UnknownType typeName))
+          )
+          decls
 
 -- TODO: Cache module definitions here
 moduleDef :: Text -> State CompilerState (Either UnificationError [AST.Declaration])

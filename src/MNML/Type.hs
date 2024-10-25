@@ -33,4 +33,4 @@ data Type
   | List Type
   | Fun [Type] Type
   | Record [(Text, Type)]
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)

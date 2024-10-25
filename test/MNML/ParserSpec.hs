@@ -7,7 +7,7 @@ import           Control.Monad.State (runState)
 import           Data.Bifunctor      (first)
 import qualified Data.Map            as Map
 import           Data.Text           (Text, pack, unlines)
-import           MNML                (CompilerState (..), NodeId,
+import           MNML                (CompilerState (..),
                                       SourceSpan (..), emptyState)
 import           MNML.AST
 import           MNML.Parser
@@ -15,7 +15,7 @@ import           Test.Hspec
 import           Text.Parsec         (sourceColumn)
 
 parse' :: Text -> (Either Text [Declaration], CompilerState)
-parse' source = first (first (pack . show)) (runState parse "test" (emptyState {_modules = Map.fromList [("test", source)]}))
+parse' source = first (first (pack . show)) (runState (parse "test") (emptyState {_modules = Map.fromList [("test", source)]}))
 
 spec :: Spec
 spec =
