@@ -51,3 +51,16 @@ spec =
       it "infers (float) parameter type" $ do
         let (res, _cs) = unify' "main = (x) => { x + 3.14 }"
         res `shouldBe` Right (T.Fun [T.Float] T.Float)
+
+    describe "lists" $ do
+      it "unifies empty list" $ do
+        let (res, _cs) = unify' "main = []"
+        res `shouldBe` Right (T.List (T.Var "elem" [] 0))
+
+      it "unifies singleton list" $ do
+        let (res, _cs) = unify' "main = [1]"
+        res `shouldBe` Right (T.List (T.Var "num" [T.Numeric] 0))
+
+      it "unifies multiple list" $ do
+        let (res, _cs) = unify' "main = [1.0, 2.0]"
+        res `shouldBe` Right (T.List T.Float)

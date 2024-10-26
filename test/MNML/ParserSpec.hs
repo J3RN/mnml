@@ -148,6 +148,19 @@ spec =
             (Right [ValueDecl _ (EApp (EApp (EVar "foo" _) _ _) _ appId) _]) = ast
         shouldSpan cs appId 8 17
 
+    describe "list literals" $ do
+      it "handles empty list" $ do
+        let (ast, _cs) = parse' "main = []"
+        ast `shouldBe` Right [ValueDecl "main" (EList [] 1) 0]
+
+      it "handles singleton list" $ do
+        let (ast, _cs) = parse' "main = [3.14]"
+        ast `shouldBe` Right [ValueDecl "main" (EList [ELit (LFloat 3.14 3) 2] 1) 0]
+
+      it "handles multiple list" $ do
+        let (ast, _cs) = parse' "main = [3.14, 2.72]"
+        ast `shouldBe` Right [ValueDecl "main" (EList [ELit (LFloat 3.14 3) 2, ELit (LFloat 2.72 5) 4] 1) 0]
+
 -- Custom expectation for spans
 
 shouldSpan :: (HasCallStack) => CompilerState -> NodeId -> Int -> Int -> Expectation

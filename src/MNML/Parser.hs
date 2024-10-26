@@ -157,6 +157,7 @@ primaryExpr =
   caseExpr
     -- lambda and generalized parens both start with open paren
     <|> try lambdaExpr
+    <|> listExpr
     <|> recordExpr
     <|> captureSpan (EVar <$> identifier)
     <|> captureSpan (EConstructor <$> typeIdentifier)
@@ -237,6 +238,10 @@ captureChainl1 p op =
         recordSpan start end nodeId
         let res = f x y nodeId in rest start res
         <|> return x
+
+listExpr :: Parser Expr
+listExpr = do
+  captureSpan (EList <$> brackets (commaSep expression))
 
 recordExpr :: Parser Expr
 recordExpr = do
