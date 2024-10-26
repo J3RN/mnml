@@ -8,7 +8,7 @@ module MNML.AST
     , Type (..)
     ) where
 
-import           Data.Text
+import           Data.Text (Text)
 
 type NodeId = Integer
 

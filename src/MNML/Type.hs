@@ -5,7 +5,7 @@ module MNML.Type
     , VarId
     ) where
 
-import           Data.Text
+import           Data.Text    (Text)
 import           MNML.AST     (NodeId)
 import           MNML.Pattern (Pattern)
 
