@@ -18,8 +18,6 @@ import qualified MNML.AST            as AST
 import qualified MNML.Parse          as P
 import qualified MNML.Type           as T
 
-
-
 data UnificationError
   = UnknownVar AST.NodeId
   | UnknownVal Text
@@ -79,7 +77,7 @@ constrain (AST.EConstructor name _nodeId) = do
     Left err           -> giveUp err "name"
     Right expectedType -> return (expectedType, [])
 constrain (AST.ELit lit _nodeId) =
-  (, []) <$> litType lit
+  (,[]) <$> litType lit
 constrain (AST.ELambda args body nodeId) = do
   oldBindings <- gets _bindings
   -- Fresh argument type bindings
@@ -190,9 +188,12 @@ bind nodeId var t cs =
     then return (Just (OccursError var t nodeId))
     else do
       modify (eliminateAndInsert var t)
-      unify ( ( \case
-                  (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
-              ) <$> cs)
+      unify
+        ( ( \case
+              (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
+          )
+            <$> cs
+        )
   where
     subst = (var, t)
     eliminateAndInsert :: T.Type -> T.Type -> Subst -> Subst
@@ -243,7 +244,7 @@ valueType modu valName = do
         ( do
             (inferType, constraints) <- constrain expr
             case runState (unify constraints) Map.empty of
-              (Just err, _)    -> return (Left err)
+              (Just err, _) -> return (Left err)
               (Nothing, subst) -> return (Right (fromMaybe inferType (subst !? inferType)))
         )
         (initialEnv modu)

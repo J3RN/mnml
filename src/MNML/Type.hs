@@ -1,7 +1,7 @@
 module MNML.Type
     ( Constraint (..)
-    , Type (..)
     , Trait (..)
+    , Type (..)
     , VarId
     ) where
 
@@ -18,7 +18,7 @@ data Constraint
   deriving (Show)
 
 data Trait = Numeric
-  deriving (Show, Ord, Eq)
+  deriving (Eq, Ord, Show)
 
 data Type
   -- "User" (can be an alias or a user-defined type)
