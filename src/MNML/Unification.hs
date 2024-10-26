@@ -89,16 +89,16 @@ constrain (AST.ELambda args body nodeId) = do
   (bt, bc) <- constrain body
   -- Restore bindings
   modify (set bindings oldBindings)
-  (\v -> (v , T.CEqual v (T.Fun (map snd argVars) bt) nodeId : bc)) <$> freshTypeVar "fun" []
-  -- return (T.Fun (map snd argVars) bt, bc)
+  --
+  retType <- freshTypeVar "fun" []
+  return (retType, T.CEqual retType (T.Fun (map snd argVars) bt) nodeId : bc)
 constrain (AST.EApp funExpr argExprs nodeId) = do
   (funType, fc) <- constrain funExpr
   argResults <- mapM constrain argExprs
   let argTypes = map fst argResults
       argConstraints = concatMap snd argResults
   retType <- freshTypeVar "ret" []
-  let functionConstraint = T.CEqual (T.Fun argTypes retType) funType nodeId
-  return (retType, functionConstraint : fc ++ argConstraints)
+  return (retType, T.CEqual (T.Fun argTypes retType) funType nodeId : fc ++ argConstraints)
 -- constrain (AST.ECase subj branches _nodeId) = do
 --   (subjType, subjConstraints) <- constrain subj
 --   -- return ()
@@ -111,17 +111,19 @@ constrain (AST.EBinary _op left right nodeId) = do
   let lConstraint = T.CEqual retVar lType nodeId
       rConstraint = T.CEqual retVar rType nodeId
   return (retVar, lConstraint : rConstraint : lConstraints ++ rConstraints)
-constrain (AST.ERecord fields _nodeId) = do
+constrain (AST.ERecord fields nodeId) = do
   fieldResults <- mapM constrain (snd <$> fields)
   let typedFields = zip (fst <$> fields) (fst <$> fieldResults)
       fieldConstraints = concatMap snd fieldResults
-  return (T.Record typedFields, fieldConstraints)
+  retType <- freshTypeVar "ret" []
+  return (retType, T.CEqual retType (T.Record typedFields) nodeId : fieldConstraints)
 constrain (AST.EList elems nodeId) = do
   elemResults <- mapM constrain elems
   elemType <- freshTypeVar "elem" []
+  retType <- freshTypeVar "ret" []
   let consistencyConstraints = (\t -> T.CEqual elemType t nodeId) . fst <$> elemResults
       elemConstraints = concatMap snd elemResults
-  return (T.List elemType, consistencyConstraints ++ elemConstraints)
+  return (retType, T.CEqual (T.List elemType) retType nodeId : consistencyConstraints ++ elemConstraints)
 
 freshTypeVar :: Text -> [T.Trait] -> Unify T.Type
 freshTypeVar name traits = state (freshTypeVar' name traits)
