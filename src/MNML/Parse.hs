@@ -1,4 +1,4 @@
-module MNML.Parser
+module MNML.Parse
     ( ParseError
     , parse
     ) where
@@ -23,23 +23,23 @@ import qualified Text.Parsec.Token   as Tok
 
 -- Data Types
 
-newtype ParserEnv
-  = ParserEnv { _nextId :: NodeId }
+newtype ParseEnv
+  = ParseEnv { _nextId :: NodeId }
 
-nextId :: Lens' ParserEnv NodeId
+nextId :: Lens' ParseEnv NodeId
 nextId = lens _nextId (\pe ni -> pe {_nextId = ni})
 
-initialEnv :: ParserEnv
-initialEnv = ParserEnv {_nextId = 0}
+initialEnv :: ParseEnv
+initialEnv = ParseEnv {_nextId = 0}
 
-type Parser = ParsecT Text ParserEnv (State CompilerState)
+type Parser = ParsecT Text ParseEnv (State CompilerState)
 
 -- Client API
 parse :: Text -> State CompilerState (Either ParseError [Declaration])
 parse modu = do
   moduleTextResult <- gets ((Map.!? modu) . _modules)
   case moduleTextResult of
-    Just rawCode -> runParserT MNML.Parser.mod initialEnv (unpack $ modu <> ".mnml") rawCode
+    Just rawCode -> runParserT MNML.Parse.mod initialEnv (unpack $ modu <> ".mnml") rawCode
     Nothing -> runParserT (fail $ mconcat ["File '", unpack modu <> ".mnml'", " not loaded"]) initialEnv (unpack $ modu <> ".mnml") empty
 
 -- Helpers
@@ -47,7 +47,7 @@ parse modu = do
 -- Fix name later
 nodeIdPlusPlus :: Parser NodeId
 nodeIdPlusPlus = do
-  ParserEnv {_nextId = nodeId} <- getState
+  ParseEnv {_nextId = nodeId} <- getState
   modifyState (over nextId (+ 1))
   return nodeId
 
@@ -302,7 +302,7 @@ fieldPattern = do
 
 -- "Lexer"
 
-mnmlDef :: Tok.GenLanguageDef Text (ParserEnv) (State CompilerState)
+mnmlDef :: Tok.GenLanguageDef Text ParseEnv (State CompilerState)
 mnmlDef =
   Tok.LanguageDef
     { Tok.caseSensitive = True,
@@ -318,7 +318,7 @@ mnmlDef =
       Tok.reservedNames = ["alias", "case", "of", "not", "and", "or"]
     }
 
-lexer :: Tok.GenTokenParser Text (ParserEnv) (State CompilerState)
+lexer :: Tok.GenTokenParser Text ParseEnv (State CompilerState)
 lexer = Tok.makeTokenParser mnmlDef
 
 identifier :: Parser Text

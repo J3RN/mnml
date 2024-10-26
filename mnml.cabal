@@ -27,10 +27,11 @@ library
   exposed-modules:
       MNML
       MNML.AST
-      MNML.Parser
+      MNML.Constrain
+      MNML.Parse
       MNML.Pattern
       MNML.Type
-      MNML.Unification
+      MNML.Unify
   other-modules:
       Paths_mnml
   autogen-modules:
@@ -86,8 +87,8 @@ test-suite mnml-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      MNML.ParserSpec
-      MNML.UnificationSpec
+      MNML.ParseSpec
+      MNML.UnifySpec
       Paths_mnml
   autogen-modules:
       Paths_mnml

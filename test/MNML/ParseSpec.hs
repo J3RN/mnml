@@ -1,4 +1,4 @@
-module MNML.ParserSpec
+module MNML.ParseSpec
     ( spec
     ) where
 
@@ -7,10 +7,10 @@ import           Control.Monad.State (runState)
 import           Data.Bifunctor      (first)
 import qualified Data.Map            as Map
 import           Data.Text           (Text, pack, unlines)
-import           MNML                (CompilerState (..),
-                                      SourceSpan (..), emptyState)
+import           MNML                (CompilerState (..), SourceSpan (..),
+                                      emptyState)
 import           MNML.AST
-import           MNML.Parser
+import           MNML.Parse
 import           Test.Hspec
 import           Text.Parsec         (sourceColumn)
 

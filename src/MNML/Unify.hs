@@ -1,21 +1,21 @@
-module MNML.Unification
+module MNML.Unify
     ( UnificationError
     , valueType
     ) where
 
 import           Control.Monad.State (State, StateT, evalStateT, gets, lift,
-                                      modify, state, runState)
+                                      modify, runState, state)
 import           Data.Bifunctor      (first, second)
 import           Data.Function       (on)
-import qualified Data.List as List
+import qualified Data.List           as List
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
-import           Data.Maybe          (listToMaybe, mapMaybe, fromMaybe)
+import           Data.Maybe          (fromMaybe, listToMaybe, mapMaybe)
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
 import           MNML                (CompilerState (..))
 import qualified MNML.AST            as AST
-import qualified MNML.Parser         as P
+import qualified MNML.Parse          as P
 import qualified MNML.Type           as T
 
 
@@ -177,9 +177,9 @@ unify ((T.CEqual t1 t2 nodeId) : _) = return (Just (UnificationError t1 t2 nodeI
 
 implements :: T.Type -> T.Trait -> Bool
 implements (T.Var _ traits _) T.Numeric = T.Numeric `elem` traits
-implements T.Int T.Numeric = True
-implements T.Float T.Numeric = True
-implements _ _ = False
+implements T.Int T.Numeric              = True
+implements T.Float T.Numeric            = True
+implements _ _                          = False
 
 intersectWith :: (Ord a) => (b -> b -> c) -> [(a, b)] -> [(a, b)] -> [(a, c)]
 intersectWith comb a b = Map.toList $ (Map.intersectionWith comb `on` Map.fromList) a b

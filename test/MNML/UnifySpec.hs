@@ -1,4 +1,4 @@
-module MNML.UnificationSpec
+module MNML.UnifySpec
     ( spec
     ) where
 
@@ -7,7 +7,7 @@ import qualified Data.Map            as Map
 import           Data.Text
 import           MNML                (CompilerState (..), emptyState)
 import qualified MNML.Type           as T
-import           MNML.Unification
+import           MNML.Unify
 import           Test.Hspec
 
 unify' :: Text -> (Either UnificationError T.Type, CompilerState)
