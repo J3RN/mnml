@@ -3,11 +3,11 @@ module MNML.Unification
     , valueType
     ) where
 
-import Debug.Trace (trace)
 import           Control.Monad.State (State, StateT, evalStateT, gets, lift,
                                       modify, state, runState)
 import           Data.Bifunctor      (first, second)
 import           Data.Function       (on)
+import qualified Data.List as List
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe, fromMaybe)
@@ -18,6 +18,8 @@ import qualified MNML.AST            as AST
 import qualified MNML.Parser         as P
 import qualified MNML.Type           as T
 
+
+
 data UnificationError
   = UnknownVar AST.NodeId
   | UnknownVal Text
@@ -26,7 +28,7 @@ data UnificationError
   | ArgumentLengthMismatch AST.NodeId
   | UnificationError T.Type T.Type AST.NodeId
   | OccursError T.Type T.Type AST.NodeId
-  | ExpectedNumeric T.Type AST.NodeId
+  | ExpectedTraits T.Type [T.Trait] AST.NodeId
   | ParseError P.ParseError
   deriving (Eq, Show)
 
@@ -58,7 +60,7 @@ addError :: UnificationError -> Unify ()
 addError err = modify (\s -> s {_errors = err : _errors s})
 
 giveUp :: UnificationError -> Text -> Unify (T.Type, [T.Constraint])
-giveUp err name = addError err >> (,[]) <$> freshTypeVar name
+giveUp err name = addError err >> (,[]) <$> freshTypeVar name []
 
 constrain :: AST.Expr -> Unify (T.Type, [T.Constraint])
 constrain (AST.EVar name nodeId) = do
@@ -68,7 +70,7 @@ constrain (AST.EVar name nodeId) = do
     Just t -> return (t, [])
     Nothing -> do
       addError (UnknownVar nodeId)
-      newTVar <- freshTypeVar name
+      newTVar <- freshTypeVar name []
       return (newTVar, [])
 constrain (AST.EConstructor name _nodeId) = do
   modu <- gets _module
@@ -77,24 +79,24 @@ constrain (AST.EConstructor name _nodeId) = do
     Left err           -> giveUp err "name"
     Right expectedType -> return (expectedType, [])
 constrain (AST.ELit lit _nodeId) =
-  return (litType lit, [])
+  (, []) <$> litType lit
 constrain (AST.ELambda args body nodeId) = do
   oldBindings <- gets _bindings
   -- Fresh argument type bindings
-  argVars <- mapM (\arg -> (arg,) <$> freshTypeVar arg) args
+  argVars <- mapM (\arg -> (arg,) <$> freshTypeVar arg []) args
   modify (over bindings (Map.union (Map.fromList argVars)))
   -- Infer body constraints
   (bt, bc) <- constrain body
   -- Restore bindings
   modify (set bindings oldBindings)
-  (\v -> (v , T.CEqual v (T.Fun (map snd argVars) bt) nodeId : bc)) <$> freshTypeVar "fun"
+  (\v -> (v , T.CEqual v (T.Fun (map snd argVars) bt) nodeId : bc)) <$> freshTypeVar "fun" []
   -- return (T.Fun (map snd argVars) bt, bc)
 constrain (AST.EApp funExpr argExprs nodeId) = do
   (funType, fc) <- constrain funExpr
   argResults <- mapM constrain argExprs
   let argTypes = map fst argResults
       argConstraints = concatMap snd argResults
-  retType <- freshTypeVar "ret"
+  retType <- freshTypeVar "ret" []
   let functionConstraint = T.CEqual (T.Fun argTypes retType) funType nodeId
   return (retType, functionConstraint : fc ++ argConstraints)
 -- constrain (AST.ECase subj branches _nodeId) = do
@@ -105,12 +107,10 @@ constrain (AST.EApp funExpr argExprs nodeId) = do
 constrain (AST.EBinary _op left right nodeId) = do
   (lType, lConstraints) <- constrain left
   (rType, rConstraints) <- constrain right
-  resVar <- freshTypeVar "ret"
-  let retConstraint = T.CEqual T.Numeric resVar nodeId
-      lConstraint = T.CEqual T.Numeric lType nodeId
-      rConstraint = T.CEqual T.Numeric rType nodeId
-      consistencyConstraint = T.CEqual lType rType nodeId
-  return (resVar, retConstraint : lConstraint : rConstraint : consistencyConstraint : lConstraints ++ rConstraints)
+  retVar <- freshTypeVar "ret" [T.Numeric]
+  let lConstraint = T.CEqual retVar lType nodeId
+      rConstraint = T.CEqual retVar rType nodeId
+  return (retVar, lConstraint : rConstraint : lConstraints ++ rConstraints)
 constrain (AST.ERecord fields _nodeId) = do
   fieldResults <- mapM constrain (snd <$> fields)
   let typedFields = zip (fst <$> fields) (fst <$> fieldResults)
@@ -118,23 +118,24 @@ constrain (AST.ERecord fields _nodeId) = do
   return (T.Record typedFields, fieldConstraints)
 constrain (AST.EList elems nodeId) = do
   elemResults <- mapM constrain elems
-  elemType <- freshTypeVar "elem"
+  elemType <- freshTypeVar "elem" []
   let consistencyConstraints = (\t -> T.CEqual elemType t nodeId) . fst <$> elemResults
       elemConstraints = concatMap snd elemResults
   return (T.List elemType, consistencyConstraints ++ elemConstraints)
 
-freshTypeVar :: Text -> Unify T.Type
-freshTypeVar name = state (freshTypeVar' name)
+freshTypeVar :: Text -> [T.Trait] -> Unify T.Type
+freshTypeVar name traits = state (freshTypeVar' name traits)
   where
-    freshTypeVar' n s =
+    freshTypeVar' n ts s =
       let newTVId = _nextVarId s
-       in (T.Var n newTVId, s {_nextVarId = newTVId + 1})
+       in (T.Var n ts newTVId, s {_nextVarId = newTVId + 1})
 
-litType :: AST.Literal -> T.Type
-litType (AST.LInt _ _)    = T.Int
-litType (AST.LFloat _ _)  = T.Float
-litType (AST.LChar _ _)   = T.Char
-litType (AST.LString _ _) = T.String
+litType :: AST.Literal -> Unify T.Type
+-- For now, an "int" literal (e.g. "5") will be interpreted as "numeric type" (could be float)
+litType (AST.LInt _ _)    = freshTypeVar "num" [T.Numeric]
+litType (AST.LFloat _ _)  = return T.Float
+litType (AST.LChar _ _)   = return T.Char
+litType (AST.LString _ _) = return T.String
 
 type Subst = Map T.Type T.Type
 
@@ -142,9 +143,9 @@ type Subst = Map T.Type T.Type
 
 unify :: [T.Constraint] -> State Subst (Maybe UnificationError)
 unify [] = return Nothing
--- Delete rule
+-- Delete
 unify ((T.CEqual t1 t2 _) : cs) | t1 == t2 = unify cs
--- Decompose rules
+-- Decompose
 unify ((T.CEqual (T.List a) (T.List b) nodeId) : cs) = unify (T.CEqual a b nodeId : cs)
 unify ((T.CEqual (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2) nodeId) : cs) =
   if length argTypes1 /= length argTypes2
@@ -158,16 +159,25 @@ unify ((T.CEqual (T.Record fieldSpec1) (T.Record fieldSpec2) nodeId) : cs) =
       fieldConstraints = (\(_, (t1, t2)) -> T.CEqual t1 t2 nodeId) <$> commonFields
    in unify (fieldConstraints ++ cs)
 -- Eliminate
-unify ((T.CEqual var@(T.Var _ _) t nodeId) : cs) = bind nodeId var t cs
+-- We don't want to swap incompatible vars back and forth forever, so we try both sides
+-- and fail if both sides are incompatible vars
+unify ((T.CEqual var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2) nodeId) : cs)
+  -- If they're the same, choose the var with the lowest ID
+  | List.sort traits1 == List.sort traits2 = if id1 < id2 then bind nodeId var2 var1 cs else bind nodeId var1 var2 cs
+  | (var2 `implements`) `all` traits1 = bind nodeId var1 var2 cs
+  | (var1 `implements`) `all` traits2 = bind nodeId var2 var1 cs
+  | otherwise = return (Just (ExpectedTraits var2 traits1 nodeId))
+unify ((T.CEqual var@(T.Var _ traits _) t nodeId) : cs) | (t `implements`) `all` traits = bind nodeId var t cs
 -- Swap
-unify ((T.CEqual t var@(T.Var _ _) nodeId) : cs) = unify (T.CEqual var t nodeId : cs)
--- Numeric swap
-unify ((T.CEqual t T.Numeric nodeId) : cs) = unify (T.CEqual T.Numeric t nodeId : cs)
--- Numeric elimination
-unify ((T.CEqual T.Numeric T.Float _) : cs) = unify cs
-unify ((T.CEqual T.Numeric T.Int _) : cs) = unify cs
+unify ((T.CEqual t var@(T.Var _ _ _) nodeId) : cs) = unify (T.CEqual var t nodeId : cs)
 -- Conflict
 unify ((T.CEqual t1 t2 nodeId) : _) = return (Just (UnificationError t1 t2 nodeId))
+
+implements :: T.Type -> T.Trait -> Bool
+implements (T.Var _ traits _) T.Numeric = T.Numeric `elem` traits
+implements T.Int T.Numeric = True
+implements T.Float T.Numeric = True
+implements _ _ = False
 
 intersectWith :: (Ord a) => (b -> b -> c) -> [(a, b)] -> [(a, b)] -> [(a, c)]
 intersectWith comb a b = Map.toList $ (Map.intersectionWith comb `on` Map.fromList) a b
@@ -177,7 +187,6 @@ bind nodeId var t cs =
   if var `occursIn` t
     then return (Just (OccursError var t nodeId))
     else do
-      -- let _ = trace "replacing" subst
       modify (eliminateAndInsert var t)
       unify ( ( \case
                   (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
@@ -185,7 +194,7 @@ bind nodeId var t cs =
   where
     subst = (var, t)
     eliminateAndInsert :: T.Type -> T.Type -> Subst -> Subst
-    eliminateAndInsert src target = (\m -> trace (mconcat ["Substs: ", show m]) m) <$> Map.insert src target . Map.map (eliminate src target)
+    eliminateAndInsert src target = Map.insert src target . Map.map (eliminate src target)
     eliminate :: T.Type -> T.Type -> T.Type -> T.Type
     eliminate src target substType | substType == src = target
     eliminate src target (T.List substElemType) = T.List (eliminate src target substElemType)
@@ -199,12 +208,11 @@ occursIn _ (T.TypeAlias _) = False
 -- Algebraic types currently don't support vars (but will)
 occursIn _ (T.AlgebraicType _) = False
 occursIn var1 var2 | var1 == var2 = True
-occursIn _ (T.Var _ _) = False
+occursIn _ (T.Var _ _ _) = False
 occursIn _ T.Int = False
 occursIn _ T.Float = False
 occursIn _ T.Char = False
 occursIn _ T.String = False
-occursIn _ T.Numeric = False
 occursIn var (T.List elemType) = var `occursIn` elemType
 occursIn var (T.Fun argTypes retType) = any (var `occursIn`) argTypes || var `occursIn` retType
 occursIn var (T.Record fieldSpec) = any ((var `occursIn`) . snd) fieldSpec
@@ -213,12 +221,11 @@ applySubst :: (T.Type, T.Type) -> T.Type -> T.Type
 applySubst _ (T.TypeAlias name) = T.TypeAlias name
 applySubst _ (T.AlgebraicType name) = T.AlgebraicType name
 applySubst (var1, rep) var2 | var1 == var2 = rep
-applySubst _ var@(T.Var _ _) = var
+applySubst _ var@(T.Var _ _ _) = var
 applySubst _ T.Int = T.Int
 applySubst _ T.Float = T.Float
 applySubst _ T.Char = T.Char
 applySubst _ T.String = T.String
-applySubst _ T.Numeric = T.Numeric
 applySubst subst (T.List elemType) = T.List (applySubst subst elemType)
 applySubst subst (T.Fun argTypes retType) = T.Fun (applySubst subst <$> argTypes) (applySubst subst retType)
 applySubst subst (T.Record fieldSpec) = T.Record $ second (applySubst subst) <$> fieldSpec
@@ -233,7 +240,7 @@ valueType modu valName = do
       evalStateT
         ( do
             (inferType, constraints) <- constrain expr
-            case runState (unify (trace (mconcat ["Constraints: ", show constraints]) constraints)) Map.empty of
+            case runState (unify constraints) Map.empty of
               (Just err, _)    -> return (Left err)
               (Nothing, subst) -> return (Right (fromMaybe inferType (subst !? inferType)))
         )
@@ -306,7 +313,7 @@ typify (AST.TFun argTypes resType _) = do
 typify (AST.TRecord fields _) = do
   fieldTypes <- mapM (\(name, aType) -> ((name,) <$>) <$> typify aType) fields
   return $ T.Record <$> sequence fieldTypes
-typify (AST.TVar name _) = Right <$> freshTypeVar name
+typify (AST.TVar name _) = Right <$> freshTypeVar name []
 
 moduleNamedType :: Text -> Text -> Unify (Either UnificationError T.Type)
 moduleNamedType modu typeName = do

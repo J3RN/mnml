@@ -19,9 +19,9 @@ spec :: Spec
 spec =
   describe "Unification" $ do
     describe "literals" $ do
-      it "unifies ints" $ do
+      it "unifies 'nUmeRiCs'" $ do
         let (res, _) = unify' "main = 42"
-        res `shouldBe` Right T.Int
+        res `shouldBe` Right (T.Var "num" [T.Numeric] 0)
 
       it "unifies floats" $ do
         let (res, _) = unify' "main = 3.14"
@@ -38,15 +38,15 @@ spec =
     describe "lambdas" $ do
       it "unifies nullary lambdas" $ do
         let (res, _cs) = unify' "main = () => { 1 }"
-        res `shouldBe` Right (T.Fun [] T.Int)
+        res `shouldBe` Right (T.Fun [] (T.Var "num" [T.Numeric] 0))
 
       it "unifies identity" $ do
         let (res, _cs) = unify' "main = (x) => { x }"
-        res `shouldBe` Right (T.Fun [T.Var "x" 0] (T.Var "x" 0))
+        res `shouldBe` Right (T.Fun [T.Var "x" [] 0] (T.Var "x" [] 0))
 
       it "infers parameter types" $ do
         let (res, _cs) = unify' "main = (x) => { x + 42 }"
-        res `shouldBe` Right (T.Fun [T.Numeric] T.Numeric)
+        res `shouldBe` Right (T.Fun [T.Var "num" [T.Numeric] 1] (T.Var "num" [T.Numeric] 1))
 
       it "infers (float) parameter type" $ do
         let (res, _cs) = unify' "main = (x) => { x + 3.14 }"
