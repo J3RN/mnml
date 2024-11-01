@@ -73,6 +73,61 @@ I worked on [Gleam] and its tooling on-and-off for several years.  mnml and Glea
 
 [Haskell] is, alongside Elm, one of my favorite languages.  This is pretty unsurprising, because Haskell and Elm are very similar.  mnml's largest departures from Haskell are not using ML syntax and allowing functions to have side-effects (as mentioned with Elm).  I believe it is also widely accepted that Haskell's import system is unfriendly, and mnml tries to improve on it.
 
+## Considerations
+
+### Bindings
+
+My current leaning is to not have a keyword for bindings, allowing you to simply write, e.g.
+```
+foo = 1
+```
+
+My current leaning is also to not allow shadowing.  i.e. the following is not allowed:
+
+```
+foo = 1
+foo = foo +1
+```
+
+When allowing shadowing, you occasionally run into issues where typos create a new variable when you intended to shadow a variable, e.g.
+
+```
+foo = 1
+fop = foo + 1
+do_thing(foo)
+```
+
+Here, the author intended to shadow `foo` with its value incremented, but accidentally created a `fop` varaible instead.  `do_thing` is then called with the unincremented `foo`, which is a bug.  However, since we don't (plan to) support shadowing, you would actually *need* to define a new variable (e.g. `fop`) to store the incremented value.
+
+If we do decide to allow shadowing, we'll want to also use a `let` keyword to prevent accidental shadowing.
+
+### If
+
+Originally I didn't think I would include an `if` in mnml because it already has a control-flow construct in `case` (Gleam, for instance, has no `if`).  However, I've come to believe that `if` conveys intent more clearly in a variety of scenarios.  Which leads me to the choice between a few different designs:
+
+1. The Haskell/Grain design: `if ... then ... else ... ` is an expression that can be chained, e.g.
+    ```haskell
+    if foo
+    then "foo"
+    else if bar
+      then "bar"
+      else "neither foo nor bar"
+    ```
+    This has a nice property in that the `if ... then ... else ...` construct is semantically quite simple, but is quite verbose in my opinion.
+2. More of a `cond` or Erlang `if` style:
+    ```erlang
+    if foo -> "foo"
+       bar -> "bar"
+       true -> "neither foo nor bar"
+    ```
+    This style is terse which grants it a nice clarity.  However, my biggest gripe is that this `if`'s "else" else is `true ->`.  Indeed, in mnml, unlike in Erlang or many lisps, every `if`/`cond` must be "covering", meaning that it must have an "else", so `true ->` would crop up everywhere.  A bit of a weird style, in my opinion, which leads us to the last option:
+3. Custom hybrid:
+    ```mnml
+    if foo -> "foo"
+       bar -> "bar"
+       otherwise "neither foo nor bar"
+    ```
+
 <!-- References -->
 [Elm]: https://elm-lang.org
 [JavaScript]: https://developer.mozilla.org/en-US/docs/Web/JavaScript
