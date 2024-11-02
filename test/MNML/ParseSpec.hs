@@ -6,7 +6,8 @@ import           Control.Monad       (unless)
 import           Control.Monad.State (runState)
 import           Data.Bifunctor      (first)
 import qualified Data.Map            as Map
-import           Data.Text           (Text, pack, unlines)
+import           Data.Text           (Text)
+import qualified Data.Text           as Text
 import           MNML                (CompilerState (..), SourceSpan (..),
                                       emptyState)
 import           MNML.AST
@@ -15,7 +16,7 @@ import           Test.Hspec
 import           Text.Parsec         (sourceColumn)
 
 parse' :: Text -> (Either Text [Declaration], CompilerState)
-parse' source = first (first (pack . show)) (runState (parse "test") (emptyState {_modules = Map.fromList [("test", source)]}))
+parse' source = first (first (Text.pack . show)) (runState (parse "test") (emptyState {_modules = Map.fromList [("test", source)]}))
 
 spec :: Spec
 spec =
@@ -71,7 +72,7 @@ spec =
 
     describe "case" $ do
       it "handles constructors" $ do
-        let (ast, _cs) = parse' (Data.Text.unlines ["main = case foo of", "Just(n) -> n", "None -> 5"])
+        let (ast, _cs) = parse' (Text.unlines ["main = case foo of", "Just(n) -> n", "None -> 5"])
         ast
           `shouldBe` Right
             [ ValueDecl
