@@ -99,18 +99,17 @@ constrain (AST.ECase subj branches nodeId) = do
   (subjType, subjConstraints) <- constrain subj
   branchRes <- mapM constrainBranch branches
   retType <- freshTypeVar "ret" []
-  let
-    (patternRes, clauseRes) = unzip branchRes
-    -- The subject type will need to match every pattern
-    patternConstraints = map ((\x -> T.CEqual subjType x nodeId) . fst) patternRes
-    patternSubConstraints = concatMap snd patternRes
-    -- Every clause type must match the return type of the case expression
-    clauseConstraints = map ((\x -> T.CEqual retType x nodeId) . fst) clauseRes
-    clauseSubConstraints = concatMap snd clauseRes
+  let (patternRes, clauseRes) = unzip branchRes
+      -- The subject type will need to match every pattern
+      patternConstraints = map ((\x -> T.CEqual subjType x nodeId) . fst) patternRes
+      patternSubConstraints = concatMap snd patternRes
+      -- Every clause type must match the return type of the case expression
+      clauseConstraints = map ((\x -> T.CEqual retType x nodeId) . fst) clauseRes
+      clauseSubConstraints = concatMap snd clauseRes
   return (retType, concat [patternConstraints, clauseConstraints, subjConstraints, patternSubConstraints, clauseSubConstraints])
   where
     constrainBranch :: (AST.Pattern, AST.Expr) -> Constrain ((T.Type, [T.Constraint]), (T.Type, [T.Constraint]))
-    constrainBranch (bPattern, bExpr)= do
+    constrainBranch (bPattern, bExpr) = do
       oldBindings <- gets _bindings
       patternConstraints <- constrainPattern bPattern
       clauseConstriants <- constrain bExpr
@@ -124,8 +123,8 @@ constrain (AST.EBinary _op left right nodeId) = do
       rConstraint = T.CEqual retVar rType nodeId
   return (retVar, lConstraint : rConstraint : lConstraints ++ rConstraints)
 constrain (AST.ERecord fields nodeId) = do
-  fieldResults <- mapM constrain (snd <$> fields)
-  let typedFields = zip (fst <$> fields) (fst <$> fieldResults)
+  fieldResults <- mapM (constrain. snd) fields
+  let typedFields = zip (map fst fields) (map fst fieldResults)
       fieldConstraints = concatMap snd fieldResults
   retType <- freshTypeVar "ret" []
   return (retType, T.CEqual retType (T.Record typedFields) nodeId : fieldConstraints)
@@ -133,7 +132,7 @@ constrain (AST.EList elems nodeId) = do
   elemResults <- mapM constrain elems
   elemType <- freshTypeVar "elem" []
   retType <- freshTypeVar "ret" []
-  let consistencyConstraints = (\t -> T.CEqual elemType t nodeId) . fst <$> elemResults
+  let consistencyConstraints = map ((\t -> T.CEqual elemType t nodeId) . fst) elemResults
       elemConstraints = concatMap snd elemResults
   return (retType, T.CEqual (T.List elemType) retType nodeId : consistencyConstraints ++ elemConstraints)
 
@@ -238,8 +237,8 @@ typify (AST.TFun argTypes resType _) = do
   return (T.Fun <$> sequence maybeArgTypes <*> maybeResType)
 -- There might be a more elegant way, not sure
 typify (AST.TRecord fields _) = do
-  fieldTypes <- mapM (\(name, aType) -> ((name,) <$>) <$> typify aType) fields
-  return $ T.Record <$> sequence fieldTypes
+  fieldTypes <- mapM (\(fieldName, astType) -> ((fieldName,) <$>) <$> typify astType) fields
+  return (T.Record <$> sequence fieldTypes)
 typify (AST.TVar name _) = Right <$> freshTypeVar name []
 
 moduleNamedType :: Text -> Text -> Constrain (Either ConstraintError T.Type)

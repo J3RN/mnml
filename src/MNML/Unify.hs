@@ -49,7 +49,7 @@ unify ((T.CEqual (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2) nodeId) :
        in unify (retCon : (argTypeCons ++ cs))
 unify ((T.CEqual (T.Record fieldSpec1) (T.Record fieldSpec2) nodeId) : cs) =
   let commonFields = intersectWith (,) fieldSpec1 fieldSpec2
-      fieldConstraints = (\(_, (t1, t2)) -> T.CEqual t1 t2 nodeId) <$> commonFields
+      fieldConstraints = map (\(_, (t1, t2)) -> T.CEqual t1 t2 nodeId) commonFields
    in unify (fieldConstraints ++ cs)
 -- Eliminate
 -- We don't want to swap incompatible vars back and forth forever, so we try both sides
@@ -82,10 +82,11 @@ bind nodeId var t cs =
     else do
       modify (eliminateAndInsert var t)
       unify
-        ( ( \case
-              (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
-          )
-            <$> cs
+        ( map
+            ( \case
+                (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
+            )
+            cs
         )
   where
     subst = (var, t)
@@ -94,8 +95,8 @@ bind nodeId var t cs =
     eliminate :: T.Type -> T.Type -> T.Type -> T.Type
     eliminate src target substType | substType == src = target
     eliminate src target (T.List substElemType) = T.List (eliminate src target substElemType)
-    eliminate src target (T.Fun argTypes retType) = T.Fun (eliminate src target <$> argTypes) (eliminate src target retType)
-    eliminate src target (T.Record fieldSpec) = T.Record (second (eliminate src target) <$> fieldSpec)
+    eliminate src target (T.Fun argTypes retType) = T.Fun (map (eliminate src target) argTypes) (eliminate src target retType)
+    eliminate src target (T.Record fieldSpec) = T.Record (map (second (eliminate src target)) fieldSpec)
     eliminate _ _ substType = substType
 
 occursIn :: T.Type -> T.Type -> Bool
@@ -123,8 +124,8 @@ applySubst _ T.Float = T.Float
 applySubst _ T.Char = T.Char
 applySubst _ T.String = T.String
 applySubst subst (T.List elemType) = T.List (applySubst subst elemType)
-applySubst subst (T.Fun argTypes retType) = T.Fun (applySubst subst <$> argTypes) (applySubst subst retType)
-applySubst subst (T.Record fieldSpec) = T.Record $ second (applySubst subst) <$> fieldSpec
+applySubst subst (T.Fun argTypes retType) = T.Fun (map (applySubst subst) argTypes) (applySubst subst retType)
+applySubst subst (T.Record fieldSpec) = T.Record (map (second (applySubst subst)) fieldSpec)
 
 valueType :: Text -> Text -> State CompilerState (Either UnificationError T.Type)
 valueType modu valName = do
