@@ -23,9 +23,9 @@ main = do
 loadModules :: FilePath -> IO Modules
 loadModules basePath = do
   projFiles <- findSourceFiles basePath
-  Map.fromList <$> mapM (\file -> (Text.pack . dropExtension $ file,) <$> TIO.readFile file) projFiles
+  Map.fromList <$> mapM (\file -> (Text.pack (dropExtension file),) <$> TIO.readFile file) projFiles
 
 findSourceFiles :: FilePath -> IO [FilePath]
 findSourceFiles basePath = do
-  files <- fromRight [] <$> ((try $ listDirectory basePath) :: IO (Either IOError [FilePath]))
+  files <- fromRight [] <$> (try (listDirectory basePath) :: IO (Either IOError [FilePath]))
   (filter (isExtensionOf "mnml") files ++) . concat <$> mapM findSourceFiles files

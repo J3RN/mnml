@@ -55,7 +55,7 @@ nodeIdPlusPlus = do
 recordSpan :: SourcePos -> SourcePos -> NodeId -> Parser ()
 recordSpan start end nodeId = do
   let nodeSpan = SourceSpan start end
-  lift $ modify (over stateSpans (Map.insert nodeId nodeSpan))
+  lift (modify (over stateSpans (Map.insert nodeId nodeSpan)))
 
 -- This function needs to record the span of p, retrieve the next NodeID, increment the node
 -- counter, and associate the NodeID with the recorded span.
@@ -103,7 +103,7 @@ valueDecl = captureSpan $ do
   name <- identifier
   _ <- equal
   expr <- expression
-  return $ ValueDecl name expr
+  return (ValueDecl name expr)
 
 -- Type Parsers
 
@@ -120,12 +120,12 @@ funType = captureSpan $ do
   argTypes <- parens (commaSep pType)
   _ <- rArrow
   returnType <- pType
-  return $ TFun argTypes returnType
+  return (TFun argTypes returnType)
 
 recordType :: Parser Type
 recordType = captureSpan $ do
   fields <- braces (commaSep fieldDecl)
-  return $ TRecord fields
+  return (TRecord fields)
 
 fieldDecl :: Parser (Text, Type)
 fieldDecl = do
@@ -170,7 +170,7 @@ lambdaExpr = captureSpan $ do
   params <- parens (commaSep identifier)
   _ <- fatArrow
   body <- braces expression
-  return $ ELambda params body
+  return (ELambda params body)
 
 caseExpr :: Parser Expr
 caseExpr = captureSpan $ do
@@ -178,7 +178,7 @@ caseExpr = captureSpan $ do
   expr <- expression
   _ <- reserved "of"
   cases <- many1 caseBranch
-  return $ ECase expr cases
+  return (ECase expr cases)
 
 caseBranch :: Parser (Pattern, Expr)
 caseBranch = do
@@ -202,7 +202,7 @@ appExpr = do
     ( \expr (params, end) -> do
         nodeId <- nodeIdPlusPlus
         recordSpan start end nodeId
-        return $ EApp expr params nodeId
+        return (EApp expr params nodeId)
     )
     func
     apps
@@ -278,21 +278,21 @@ constructorPattern :: Parser Pattern
 constructorPattern = captureSpan $ do
   con <- typeIdentifier
   pats <- option [] (parens (commaSep pattern))
-  return $ PConstructor con pats
+  return (PConstructor con pats)
 
 recordPattern :: Parser Pattern
 recordPattern = captureSpan $ do
   fields <- braces (commaSep fieldPattern)
-  return $ PRecord fields
+  return (PRecord fields)
 
 -- TODO: We need a cons operator or similar
 listPattern :: Parser Pattern
 listPattern = captureSpan $ do
   pats <- brackets (commaSep pattern)
-  return $ PList pats
+  return (PList pats)
 
 literalPattern :: Parser Pattern
-literalPattern = captureSpan $ PLiteral <$> literal
+literalPattern = captureSpan (PLiteral <$> literal)
 
 fieldPattern :: Parser (Text, Pattern)
 fieldPattern = do

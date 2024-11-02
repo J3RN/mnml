@@ -169,4 +169,4 @@ shouldSpan (CompilerState {_spans = spans}) nodeId beg end =
   let (SourceSpan sBeg sEnd) = spans Map.! nodeId
       actualBeg = sourceColumn sBeg
       actualEnd = sourceColumn sEnd
-   in unless (actualBeg == beg && actualEnd == end) (expectationFailure $ mconcat ["Expected span from ", show beg, " to ", show end, ", but actually spanned from ", show actualBeg, " to ", show actualEnd])
+   in unless (actualBeg == beg && actualEnd == end) (expectationFailure (concat ["Expected span from ", show beg, " to ", show end, ", but actually spanned from ", show actualBeg, " to ", show actualEnd]))

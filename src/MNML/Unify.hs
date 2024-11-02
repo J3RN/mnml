@@ -73,7 +73,7 @@ implements T.Float T.Numeric            = True
 implements _ _                          = False
 
 intersectWith :: (Ord a) => (b -> b -> c) -> [(a, b)] -> [(a, b)] -> [(a, c)]
-intersectWith comb a b = Map.toList $ (Map.intersectionWith comb `on` Map.fromList) a b
+intersectWith comb a b = Map.toList ((Map.intersectionWith comb `on` Map.fromList) a b)
 
 bind :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> State Subst (Maybe UnificationError)
 bind nodeId var t cs =

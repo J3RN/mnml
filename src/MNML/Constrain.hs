@@ -123,7 +123,7 @@ constrain (AST.EBinary _op left right nodeId) = do
       rConstraint = T.CEqual retVar rType nodeId
   return (retVar, lConstraint : rConstraint : lConstraints ++ rConstraints)
 constrain (AST.ERecord fields nodeId) = do
-  fieldResults <- mapM (constrain. snd) fields
+  fieldResults <- mapM (constrain . snd) fields
   let typedFields = zip (map fst fields) (map fst fieldResults)
       fieldConstraints = concatMap snd fieldResults
   retType <- freshTypeVar "ret" []
@@ -190,7 +190,7 @@ constructorType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
 constructorType modu conName = do
   mDef <- lift (moduleDef modu)
   case mDef of
-    Left err    -> return $ Left err
+    Left err    -> return (Left err)
     Right decls -> findConType decls conName
 
 findConType :: [AST.Declaration] -> Text -> Constrain (Either ConstraintError T.Type)
@@ -217,7 +217,7 @@ typifyConstructor :: [AST.Type] -> Text -> Constrain (Either ConstraintError T.T
 typifyConstructor [] tName = return (Right (T.AlgebraicType tName))
 typifyConstructor argTypes tName = do
   typifiedTypes <- mapM typify argTypes
-  return $ T.Fun <$> sequence typifiedTypes <*> return (T.AlgebraicType tName)
+  return (T.Fun <$> sequence typifiedTypes <*> return (T.AlgebraicType tName))
 
 findMaybe :: (a -> Maybe b) -> [a] -> Maybe b
 findMaybe f = listToMaybe . mapMaybe f
@@ -269,16 +269,19 @@ valueConstraints modu valName = do
 valueDef :: Text -> Text -> State CompilerState (Either ConstraintError AST.Expr)
 valueDef modu valName = do
   mDef <- moduleDef modu
-  return $ mDef >>= findDef valName
+  return (mDef >>= findDef valName)
   where
     findDef name decls =
-      maybe (Left $ UnknownVal name) Right $
-        findMaybe
-          ( \case
-              (AST.ValueDecl n expr _) | n == name -> Just expr
-              _ -> Nothing
-          )
-          decls
+      maybe
+        (Left (UnknownVal name))
+        Right
+        ( findMaybe
+            ( \case
+                (AST.ValueDecl n expr _) | n == name -> Just expr
+                _ -> Nothing
+            )
+            decls
+        )
 
 -- TODO: Cache module definitions here
 moduleDef :: Text -> State CompilerState (Either ConstraintError [AST.Declaration])
