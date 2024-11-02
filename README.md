@@ -22,7 +22,7 @@ A module is a series of definitions, namely:
   ```
 - Type alias definitions
   ```mnml
-  alias User = { name: String, age: Int }
+  alias { name: String, age: Int } as User
   ```
 - Value definitions
   ```mnml

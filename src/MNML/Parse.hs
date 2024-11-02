@@ -93,9 +93,9 @@ constructor = do
 typeAliasDecl :: Parser Declaration
 typeAliasDecl = captureSpan $ do
   _ <- reserved "alias"
-  name <- typeIdentifier
-  _ <- equal
   expansionType <- pType
+  _ <- reserved "as"
+  name <- typeIdentifier
   return (TypeAliasDecl name expansionType)
 
 valueDecl :: Parser Declaration
@@ -316,7 +316,7 @@ mnmlDef =
       Tok.identStart = lower,
       Tok.identLetter = alphaNum <|> char '_',
       Tok.reservedOpNames = ["+", "-", "*", "/", "|>", "=", "==", "|"],
-      Tok.reservedNames = ["alias", "case", "of", "not", "and", "or"]
+      Tok.reservedNames = ["alias", "as", "case", "of", "not", "and", "or"]
     }
 
 lexer :: Tok.GenTokenParser Text ParseEnv (State CompilerState)
