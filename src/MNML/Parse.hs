@@ -7,7 +7,8 @@ import           Control.Monad       (foldM)
 import           Control.Monad.State (State, gets, lift, modify)
 import           Data.Functor        (($>))
 import qualified Data.Map            as Map
-import           Data.Text
+import           Data.Text           (Text)
+import qualified Data.Text           as Text
 import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState (..), SourceSpan (..),
                                       stateSpans)
@@ -39,8 +40,8 @@ parse :: Text -> State CompilerState (Either ParseError [Declaration])
 parse modu = do
   moduleTextResult <- gets ((Map.!? modu) . _modules)
   case moduleTextResult of
-    Just rawCode -> runParserT MNML.Parse.mod initialEnv (unpack $ modu <> ".mnml") rawCode
-    Nothing -> runParserT (fail $ mconcat ["File '", unpack modu <> ".mnml'", " not loaded"]) initialEnv (unpack $ modu <> ".mnml") empty
+    Just rawCode -> runParserT MNML.Parse.mod initialEnv (Text.unpack (modu <> ".mnml")) rawCode
+    Nothing -> runParserT (fail (concat ["File '", Text.unpack modu <> ".mnml'", " not loaded"])) initialEnv (Text.unpack (modu <> ".mnml")) Text.empty
 
 -- Helpers
 
@@ -322,11 +323,11 @@ lexer :: Tok.GenTokenParser Text ParseEnv (State CompilerState)
 lexer = Tok.makeTokenParser mnmlDef
 
 identifier :: Parser Text
-identifier = pack <$> Tok.identifier lexer
+identifier = Text.pack <$> Tok.identifier lexer
 
 -- Slight misnomer; also applies to constructors
 typeIdentifier :: Parser Text
-typeIdentifier = Tok.lexeme lexer (Data.Text.cons <$> upper <*> (Data.Text.pack <$> many (alphaNum <|> char '_')))
+typeIdentifier = Tok.lexeme lexer (Text.cons <$> upper <*> (Text.pack <$> many (alphaNum <|> char '_')))
 
 integer :: Parser Integer
 integer = Tok.integer lexer
@@ -338,7 +339,7 @@ charLiteral :: Parser Char
 charLiteral = Tok.charLiteral lexer
 
 stringLiteral :: Parser Text
-stringLiteral = pack <$> Tok.stringLiteral lexer
+stringLiteral = Text.pack <$> Tok.stringLiteral lexer
 
 reserved :: String -> Parser ()
 reserved = Tok.reserved lexer
