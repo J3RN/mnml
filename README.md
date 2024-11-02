@@ -1,6 +1,6 @@
 # mnml
 
-Pronounced "minimal". A small language inspired by [Elm], [JavaScript], [Grain], [Gleam], and [Haskell], see [Differences](#differences).
+Pronounced "minimal". A small language inspired by [Elm], [JavaScript], [Grain], [Gleam], and [Haskell], see [Differences](#differences-to-other-languages).
 
 ```mnml
 main = () => {
@@ -29,6 +29,8 @@ A module is a series of definitions, namely:
   five = 5
   ```
 
+## Functions
+
 Many functional languages have first-class functions, but mnml takes this to it's logical conclusion by having function definitions simply be value definitions where the value is a lambda:
 
 ```mnml
@@ -37,15 +39,61 @@ main = () => {
 }
 ```
 
+Of course, functions can remain unnamed ("anonymous") as needed:
+```mnml
+map((x) => { x + 1 }, [1, 2, 3])
+```
+
 ## Records
 
-mnml borrows Elm's records: A record is a mapping of names to values, like Elixir's `Map`, Haskell's `Data.Map`, Ruby's `Hash`, etc. However, once a record is constructed, new name-value pairs may not be added.
+mnml borrows Elm's records: A record is a mapping of names to values.  This concept is similar to "maps" (Haskell) or "hashes" (Ruby), but those data structures allow for an arbitrary key type and the keys for records have no type; they are simply labels for the data.
 
-## Types
+A record value looks like this:
+```mnml
+{ name: "Jonathan", age: 30 }
+```
+That record's type is written:
+```
+{ name: String, age: Int }
+```
 
-mnml is strongly, statically typed with type inference.
+mnml's records are also similar to tuples in other languages (Haskell), but the tuple elements are labeled.  mnml does not have tuples (ATOW), insisting on the use of records instead.
 
-## Differences
+## Type Aliases
+
+Since record types are a bit awkward to write often, mnml has an "alias" mechanism that can be used to assign a different name to a type, for convenience.  e.g.
+```
+alias { name: String, age: Int } as User
+```
+
+With this alias defined in your code, instead of needing to write `{ name: String, age: Int }` in multiple places, you can just write `User` instead.  It's nice for typing and aid in refactoring.
+
+## Algebraic Data Types
+
+mnml has algebraic data types, similar to Haskell, Elm, Rust, and other languages.  What this means is that you can define your own data structure that is a *product* of other types...
+```mnml
+Pair(a, b) = Pair(a, b)
+```
+a *sum* of other types...
+```mnml
+Bool = True | False
+```
+or both
+```mnml
+Result(a, b) = Success(a) | Failure(b)
+```
+
+The way to read this is that the left hand side of the `=` is the type, (e.g. `Bool` is the type) and the right hand side is one or more constructors or values that are of the type, separated by `|` (e.g. `True` and `False` are `Bool` values, `Success(a)` is a constructor of type `Result(a, b)`).  A constructor is a function that produces a value.
+
+The syntax used here is a slight modification of the ML syntax used by Haskell, Elm, and others.  I personally find this confusing, and might move to something closer to Rust's syntax:
+```rust
+enum Result<T, E> {
+	Ok(T),
+	Err(E),
+}
+```
+
+## Differences to Other Languages
 
 ### From Elm
 
