@@ -3,6 +3,7 @@ module MNML.Constrain
     , valueConstraints
     ) where
 
+import           Control.Monad       (foldM)
 import           Control.Monad.State (State, StateT, evalStateT, gets, lift,
                                       modify, state)
 import           Data.Bifunctor      (first)
@@ -69,7 +70,7 @@ constrain (AST.EVar name nodeId) = do
       return (newTVar, [])
 constrain (AST.EConstructor name _nodeId) = do
   modu <- gets _module
-  expectedTypeRes <- constructorFunType modu name
+  expectedTypeRes <- constructorType modu name
   case expectedTypeRes of
     Left err           -> giveUp err "name"
     Right expectedType -> return (expectedType, [])
@@ -94,11 +95,27 @@ constrain (AST.EApp funExpr argExprs nodeId) = do
       argConstraints = concatMap snd argResults
   retType <- freshTypeVar "ret" []
   return (retType, T.CEqual (T.Fun argTypes retType) funType nodeId : fc ++ argConstraints)
--- constrain (AST.ECase subj branches _nodeId) = do
---   (subjType, subjConstraints) <- constrain subj
---   -- return ()
--- _
-
+constrain (AST.ECase subj branches nodeId) = do
+  (subjType, subjConstraints) <- constrain subj
+  branchRes <- mapM constrainBranch branches
+  retType <- freshTypeVar "ret" []
+  let
+    (patternRes, clauseRes) = unzip branchRes
+    -- The subject type will need to match every pattern
+    patternConstraints = map ((\x -> T.CEqual subjType x nodeId) . fst) patternRes
+    patternSubConstraints = concatMap snd patternRes
+    -- Every clause type must match the return type of the case expression
+    clauseConstraints = map ((\x -> T.CEqual retType x nodeId) . fst) clauseRes
+    clauseSubConstraints = concatMap snd clauseRes
+  return (retType, concat [patternConstraints, clauseConstraints, subjConstraints, patternSubConstraints, clauseSubConstraints])
+  where
+    constrainBranch :: (AST.Pattern, AST.Expr) -> Constrain ((T.Type, [T.Constraint]), (T.Type, [T.Constraint]))
+    constrainBranch (bPattern, bExpr)= do
+      oldBindings <- gets _bindings
+      patternConstraints <- constrainPattern bPattern
+      clauseConstriants <- constrain bExpr
+      modify (set bindings oldBindings)
+      return (patternConstraints, clauseConstriants)
 constrain (AST.EBinary _op left right nodeId) = do
   (lType, lConstraints) <- constrain left
   (rType, rConstraints) <- constrain right
@@ -120,6 +137,42 @@ constrain (AST.EList elems nodeId) = do
       elemConstraints = concatMap snd elemResults
   return (retType, T.CEqual (T.List elemType) retType nodeId : consistencyConstraints ++ elemConstraints)
 
+-- Create constraints based on patterns
+constrainPattern :: AST.Pattern -> Constrain (T.Type, [T.Constraint])
+constrainPattern (AST.PVar t _) = do
+  varType <- freshTypeVar t []
+  modify (over bindings (Map.insert t varType))
+  return (varType, [])
+constrainPattern (AST.PDiscard _) = (,[]) <$> freshTypeVar "_" []
+constrainPattern (AST.PConstructor name argPatterns nodeId) = do
+  modu <- gets _module
+  funTypeRes <- constructorType modu name
+  case funTypeRes of
+    Left err -> giveUp err "name"
+    Right funType@(T.Fun _ _) -> do
+      retType <- freshTypeVar name []
+      argCons <- mapM constrainPattern argPatterns
+      let argTypes = map fst argCons
+          argSubCons = concatMap snd argCons
+      return (retType, T.CEqual (T.Fun argTypes retType) funType nodeId : argSubCons)
+    Right retType -> return (retType, [])
+constrainPattern (AST.PRecord fieldSpec nodeId) = do
+  (fieldTypes, fieldConstraints) <- foldM foldRecord ([], []) fieldSpec
+  retType <- freshTypeVar "record" []
+  return (retType, T.CEqual (T.Record fieldTypes) retType nodeId : fieldConstraints)
+  where
+    foldRecord :: ([(Text, T.Type)], [T.Constraint]) -> (Text, AST.Pattern) -> Constrain ([(Text, T.Type)], [T.Constraint])
+    foldRecord (fields, fieldCons) (fieldName, fieldPattern) = do
+      (fieldType, fieldSubCons) <- constrainPattern fieldPattern
+      return ((fieldName, fieldType) : fields, fieldSubCons ++ fieldCons)
+constrainPattern (AST.PList elemPats nodeId) = do
+  elemCons <- mapM constrainPattern elemPats
+  elemType <- freshTypeVar "ret" []
+  let retCons = map ((\elemT -> T.CEqual elemType elemT nodeId) . fst) elemCons
+      elemSubCons = concatMap snd elemCons
+  return (elemType, retCons ++ elemSubCons)
+constrainPattern (AST.PLiteral lit _) = (,[]) <$> litType lit
+
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
 freshTypeVar name traits = state (freshTypeVar' name traits)
   where
@@ -134,22 +187,22 @@ litType (AST.LFloat _ _)  = return T.Float
 litType (AST.LChar _ _)   = return T.Char
 litType (AST.LString _ _) = return T.String
 
-constructorFunType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
-constructorFunType modu conName = do
+constructorType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
+constructorType modu conName = do
   mDef <- lift (moduleDef modu)
   case mDef of
     Left err    -> return $ Left err
-    Right decls -> findConType decls
-  where
-    findConType :: [AST.Declaration] -> Constrain (Either ConstraintError T.Type)
-    findConType decls =
-      foldl (<>) (Left (UnknownConstructor conName))
-        <$> mapM
-          ( \case
-              (AST.TypeDecl tName constructors _) -> conTypeFromConstructors conName tName constructors
-              _ -> (return (Left (UnknownConstructor conName)))
-          )
-          decls
+    Right decls -> findConType decls conName
+
+findConType :: [AST.Declaration] -> Text -> Constrain (Either ConstraintError T.Type)
+findConType decls conName =
+  foldl (<>) (Left (UnknownConstructor conName))
+    <$> mapM
+      ( \case
+          (AST.TypeDecl tName constructors _) -> conTypeFromConstructors conName tName constructors
+          _ -> return (Left (UnknownConstructor conName))
+      )
+      decls
 
 conTypeFromConstructors :: Text -> Text -> [(Text, [AST.Type])] -> Constrain (Either ConstraintError T.Type)
 conTypeFromConstructors conName tName constructors = do
@@ -162,6 +215,7 @@ conTypeFromConstructors conName tName constructors = do
       constructors
 
 typifyConstructor :: [AST.Type] -> Text -> Constrain (Either ConstraintError T.Type)
+typifyConstructor [] tName = return (Right (T.AlgebraicType tName))
 typifyConstructor argTypes tName = do
   typifiedTypes <- mapM typify argTypes
   return $ T.Fun <$> sequence typifiedTypes <*> return (T.AlgebraicType tName)

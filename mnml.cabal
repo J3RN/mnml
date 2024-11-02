@@ -29,7 +29,6 @@ library
       MNML.AST
       MNML.Constrain
       MNML.Parse
-      MNML.Pattern
       MNML.Type
       MNML.Unify
   other-modules:

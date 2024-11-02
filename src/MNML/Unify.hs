@@ -1,5 +1,5 @@
 module MNML.Unify
-    ( UnificationError
+    ( UnificationError (..)
     , valueType
     ) where
 

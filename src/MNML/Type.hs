@@ -5,16 +5,13 @@ module MNML.Type
     , VarId
     ) where
 
-import           Data.Text    (Text)
-import           MNML.AST     (NodeId)
-import           MNML.Pattern (Pattern)
+import           Data.Text (Text)
+import           MNML.AST  (NodeId)
 
 type VarId = Integer
 
 data Constraint
-  -- CEqual Expected Actual
   = CEqual Type Type NodeId
-  -- | CPattern Type Pattern NodeId
   deriving (Show)
 
 data Trait = Numeric
