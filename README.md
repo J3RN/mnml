@@ -97,7 +97,7 @@ enum Result<T, E> {
 
 ### From Elm
 
-Elm was probably the single largest influence on mnml's design.  However, Elm uses the ML syntax which I find difficult to visually parse.  Elm also doesn't alow for functions to have side-effects and, while I think this is an interesting constraint, I believe that, for now, this makes the code I want to write more difficult than it needs to be (see also: [From Haskell](###from-haskell)).  Elm has *limited* ad-hoc polymorphism, as in, there are typeclasses/traits built-in to the language, but users of Elm may not define new ones, whereas mnml allows the user to define new traits, like Haskell and Rust.
+Elm was probably the single largest influence on mnml's design.  However, Elm uses the ML syntax which I find difficult to visually parse.  Elm also doesn't alow for functions to have side-effects and, while I think this is an interesting constraint, I believe that, for now, this makes the code I want to write more difficult than it needs to be (see also: [From Haskell](#from-haskell)).  Elm has *limited* ad-hoc polymorphism, as in, there are typeclasses/traits built-in to the language, but users of Elm may not define new ones, whereas mnml allows the user to define new traits, like Haskell and Rust.
 
 ### From JavaScript
 
@@ -134,7 +134,7 @@ My current leaning is also to not allow shadowing.  i.e. the following is not al
 
 ```
 foo = 1
-foo = foo +1
+foo = foo + 1
 ```
 
 When allowing shadowing, you occasionally run into issues where typos create a new variable when you intended to shadow a variable, e.g.
@@ -158,8 +158,8 @@ Originally I didn't think I would include an `if` in mnml because it already has
     if foo
     then "foo"
     else if bar
-      then "bar"
-      else "neither foo nor bar"
+         then "bar"
+         else "neither foo nor bar"
     ```
     This has a nice property in that the `if ... then ... else ...` construct is semantically quite simple, but is quite verbose in my opinion.
 2. More of a `cond` or Erlang `if` style:
@@ -168,7 +168,7 @@ Originally I didn't think I would include an `if` in mnml because it already has
        bar -> "bar"
        true -> "neither foo nor bar"
     ```
-    This style is terse which grants it a nice clarity.  However, my biggest gripe is that this `if`'s "else" else is `true ->`.  Indeed, in mnml, unlike in Erlang or many lisps, every `if`/`cond` must be "covering", meaning that it must have an "else", so `true ->` would crop up everywhere.  A bit of a weird style, in my opinion, which leads us to the last option:
+    This style is terse which grants it a nice clarity.  However, my biggest gripe is that this `if`'s "else" is `true ->`.  Indeed, mnml, unlike in Erlang or many lisps, requires that every `if`/`cond` must be "covering", meaning that it must have an "else", so `true ->` would crop up everywhere.  A bit of a weird style, in my opinion, which leads us to the last option:
 3. Custom hybrid:
     ```mnml
     if foo -> "foo"
