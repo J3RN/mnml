@@ -175,6 +175,14 @@ Originally I didn't think I would include an `if` in mnml because it already has
        bar -> "bar"
        otherwise "neither foo nor bar"
     ```
+    This style is somewhat alien; it's loosely inspired by Haskell's function guards, e.g.
+    ```haskell
+    foo x
+      | x == "foo" = "foo"
+      | x == "bar" = "bar"
+      | otherwise  = "neither foo nor bar"
+    ```
+    `otherwise` is a somewhat peculiar choice of keyword, since it is so long, but when describing code aloud I find that I tend to say "if ... then ... *otherwise* ..." and so I'm inclined to use it.
 
 <!-- References -->
 [Elm]: https://elm-lang.org
