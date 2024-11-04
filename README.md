@@ -57,7 +57,7 @@ That record's type is written:
 { name: String, age: Int }
 ```
 
-mnml's records are also similar to tuples in other languages (Haskell), but the tuple elements are labeled.  mnml does not have tuples (ATOW), insisting on the use of records instead.
+mnml's records are also similar to tuples in other languages (Haskell), but with labels for the tuple elements.  mnml does not have tuples (ATOW), insisting on the use of records instead.
 
 ## Type Aliases
 
@@ -66,7 +66,7 @@ Since record types are a bit awkward to write often, mnml has an "alias" mechani
 alias { name: String, age: Int } as User
 ```
 
-With this alias defined in your code, instead of needing to write `{ name: String, age: Int }` in multiple places, you can just write `User` instead.  It's nice for typing and aid in refactoring.
+With this alias defined in your code, instead of needing to write `{ name: String, age: Int }` in multiple places, you can just write `User` instead.  It's nice for typing and aids in refactoring.
 
 ## Algebraic Data Types
 
