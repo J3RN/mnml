@@ -1,6 +1,6 @@
 # mnml
 
-Pronounced "minimal". A small language inspired by [Elm], [JavaScript], [Grain], [Gleam], and [Haskell], see [Differences](#differences-to-other-languages).
+Pronounced "minimal". A small functional language inspired by [Elm], [JavaScript], [Grain], [Gleam], and [Haskell], see [Differences](#differences-to-other-languages).
 
 ```mnml
 main = () => {
@@ -83,7 +83,9 @@ or both
 Result(a, b) = Success(a) | Failure(b)
 ```
 
-The way to read this is that the left hand side of the `=` is the type, (e.g. `Bool` is the type) and the right hand side is one or more constructors or values that are of the type, separated by `|` (e.g. `True` and `False` are `Bool` values, `Success(a)` is a constructor of type `Result(a, b)`).  A constructor is a function that produces a value.
+The way to read this is that the left hand side of the `=` is the type, (e.g. `Bool` is the type) and the right hand side is one or more constructors or values that are of the type, separated by `|` (e.g. `True` and `False` are `Bool` values, `Success` is a constructor of type `Result(a, b)`).  A constructor is a function that produces a value (e.g. `Success` is a constructor, `Success(1)` is a value).
+
+A truly minimal approach would be to have `True` and `False` be constructors that needed to be invoked to create values (i.e. `True` being a constructor (a function) and `True()` being the value), but this deviates from other languages and creates syntactic noise.
 
 The syntax used here is a slight modification of the ML syntax used by Haskell, Elm, and others.  I personally find this confusing, and might move to something closer to Rust's syntax:
 ```rust
