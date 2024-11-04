@@ -95,6 +95,35 @@ enum Result<T, E> {
 }
 ```
 
+## Control Flow
+
+At time of writing, mnml's only control flow construct is `case`.
+
+The `case` expression is a mapping of "patterns" to expressions that should be executed if the pattern matches.
+
+```mnml
+case foo of
+  [{name: firstName}, _] -> firstName
+  []                     -> "N/A"
+```
+
+In the example above, `foo` must be a list of records containing at least a `name` key.  If the list is non-empty, the first pattern (`[{name: firstName}, _]`) matches, the value associated to the `name` key (bound to a new variable `firstName`) is returned.
+
+If the list is empty, the second pattern (`[]`) matches, and `"N/A"` is returned.
+
+`case` expressions *must* be "covering", which means that a pattern must always match.  `_` is a special pattern that matches anything, and so can be used as an "if nothing above matches" pattern in a `case` expression.
+
+```mnml
+case answer of
+  "y"   -> True
+  "yes" -> True
+  _     -> False
+```
+
+In the above example, if `answer` is either `"y"` or `"yes"`, the expression returns `True`.  Otherwise, the expression returns `False`.
+
+This is another instance of borrowing ML syntax that I'm open to changing.
+
 ## Differences to Other Languages
 
 ### From Elm
