@@ -139,10 +139,10 @@ listType = captureSpan (TList <$> brackets pType)
 
 simpleType :: Parser Type
 simpleType =
-  captureSpan (TInt <$ symbol "Int")
-    <|> captureSpan (TFloat <$ symbol "Float")
-    <|> captureSpan (TChar <$ symbol "Char")
-    <|> captureSpan (TString <$ symbol "String")
+  captureSpan (TInt <$ reserved "Int")
+    <|> captureSpan (TFloat <$ reserved "Float")
+    <|> captureSpan (TChar <$ reserved "Char")
+    <|> captureSpan (TString <$ reserved "String")
 
 -- Expression Parsers
 
@@ -316,7 +316,7 @@ mnmlDef =
       Tok.identStart = lower,
       Tok.identLetter = alphaNum <|> char '_',
       Tok.reservedOpNames = ["+", "-", "*", "/", "|>", "=", "==", "|"],
-      Tok.reservedNames = ["alias", "as", "case", "of", "not", "and", "or"]
+      Tok.reservedNames = ["alias", "as", "case", "of", "not", "and", "or", "Int", "Float", "Char", "String"]
     }
 
 lexer :: Tok.GenTokenParser Text ParseEnv (State CompilerState)
