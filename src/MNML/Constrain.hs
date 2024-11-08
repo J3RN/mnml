@@ -77,14 +77,12 @@ constrain (AST.EConstructor name _nodeId) = do
 constrain (AST.ELit lit _nodeId) =
   (,[]) <$> litType lit
 constrain (AST.ELambda args body nodeId) = do
-  argVars <- mapM (\arg -> (arg,) <$> freshTypeVar arg []) args
-  (bt, bc) <- withNewScope $ do
-    -- Fresh argument type bindings
-    modify (over bindings (Map.union (Map.fromList argVars)))
-    -- Infer body constraints
-    constrain body
+  (argVars, bodyType, bodyConstraints) <- withNewScope $ do
+    argVars <- mapM declareVar args
+    (bt, bc) <- constrain body
+    return (argVars, bt, bc)
   retType <- freshTypeVar "fun" []
-  return (retType, T.CEqual retType (T.Fun (map snd argVars) bt) nodeId : bc)
+  return (retType, T.CEqual retType (T.Fun argVars bodyType) nodeId : bodyConstraints)
 constrain (AST.EApp funExpr argExprs nodeId) = do
   (funType, fc) <- constrain funExpr
   argResults <- mapM constrain argExprs
@@ -133,10 +131,7 @@ constrain (AST.EList elems nodeId) = do
 
 -- Create constraints based on patterns
 constrainPattern :: AST.Pattern -> Constrain (T.Type, [T.Constraint])
-constrainPattern (AST.PVar t _) = do
-  varType <- freshTypeVar t []
-  modify (over bindings (Map.insert t varType))
-  return (varType, [])
+constrainPattern (AST.PVar t _) = (,[]) <$> declareVar t
 constrainPattern (AST.PDiscard _) = (,[]) <$> freshTypeVar "_" []
 constrainPattern (AST.PConstructor name argPatterns nodeId) = do
   modu <- gets _module
@@ -181,6 +176,12 @@ withNewScope f = do
   result <- f
   modify (set bindings oldBindings)
   return result
+
+declareVar :: Text -> Constrain T.Type
+declareVar name = do
+  newVarType <- freshTypeVar name []
+  modify (over bindings (Map.insert name newVarType))
+  return newVarType
 
 litType :: AST.Literal -> Constrain T.Type
 -- For now, an "int" literal (e.g. "5") will be interpreted as "numeric type" (could be float)
