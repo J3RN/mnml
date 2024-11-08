@@ -72,7 +72,7 @@ constrain (AST.EConstructor name _nodeId) = do
   modu <- gets _module
   expectedTypeRes <- constructorType modu name
   case expectedTypeRes of
-    Left err           -> giveUp err "name"
+    Left err           -> giveUp err name
     Right expectedType -> return (expectedType, [])
 constrain (AST.ELit lit _nodeId) =
   (,[]) <$> litType lit
@@ -137,7 +137,7 @@ constrainPattern (AST.PConstructor name argPatterns nodeId) = do
   modu <- gets _module
   funTypeRes <- constructorType modu name
   case funTypeRes of
-    Left err -> giveUp err "name"
+    Left err -> giveUp err name
     Right funType@(T.Fun _ _) -> do
       retType <- freshTypeVar name []
       argCons <- mapM constrainPattern argPatterns
