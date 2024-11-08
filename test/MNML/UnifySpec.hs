@@ -92,6 +92,10 @@ spec =
         let (res, _cs) = unify' (Text.unlines ["MaybeInt = Just(Int) | None", "main = None"])
         res `shouldBe` Right (T.AlgebraicType "MaybeInt")
 
+      it "unifies recursive types" $ do
+        let (res, _cs) = unify' (Text.unlines ["IntList = Empty | Cons(Int, IntList)", "main = Cons(5, Cons(6, Empty))"])
+        res `shouldBe` Right (T.AlgebraicType "IntList")
+
     describe "case" $ do
       it "unifies identity case" $ do
         let (res, _cs) = unify' (Text.unlines ["main = case 4 of", "a -> a"])
