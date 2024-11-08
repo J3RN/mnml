@@ -18,16 +18,15 @@ data Trait = Numeric
   deriving (Eq, Ord, Show)
 
 data Type
-  -- "User" (can be an alias or a user-defined type)
-  = TypeAlias Text
-  | AlgebraicType Text
-  -- Type var "a" requiring types to implement traits
-  | Var Text [Trait] VarId
-  | Int
+  = Int
   | Float
   | Char
   | String
   | List Type
   | Fun [Type] Type
   | Record [(Text, Type)]
+  | AlgebraicType Text
+  | TypeAlias Text Type
+  -- Type var "a" requiring types to implement traits
+  | Var Text [Trait] VarId
   deriving (Eq, Ord, Show)

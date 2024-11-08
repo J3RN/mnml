@@ -101,7 +101,7 @@ bind nodeId var t cs =
 
 occursIn :: T.Type -> T.Type -> Bool
 -- Type aliases currently have to be qualified, so no vars
-occursIn _ (T.TypeAlias _) = False
+occursIn var (T.TypeAlias _ t) = occursIn var t
 -- Algebraic types currently don't support vars (but will)
 occursIn _ (T.AlgebraicType _) = False
 occursIn var1 var2 | var1 == var2 = True
@@ -115,10 +115,6 @@ occursIn var (T.Fun argTypes retType) = any (var `occursIn`) argTypes || var `oc
 occursIn var (T.Record fieldSpec) = any ((var `occursIn`) . snd) fieldSpec
 
 applySubst :: (T.Type, T.Type) -> T.Type -> T.Type
-applySubst _ (T.TypeAlias name) = T.TypeAlias name
-applySubst _ (T.AlgebraicType name) = T.AlgebraicType name
-applySubst (var1, rep) var2 | var1 == var2 = rep
-applySubst _ var@(T.Var _ _ _) = var
 applySubst _ T.Int = T.Int
 applySubst _ T.Float = T.Float
 applySubst _ T.Char = T.Char
@@ -126,6 +122,10 @@ applySubst _ T.String = T.String
 applySubst subst (T.List elemType) = T.List (applySubst subst elemType)
 applySubst subst (T.Fun argTypes retType) = T.Fun (map (applySubst subst) argTypes) (applySubst subst retType)
 applySubst subst (T.Record fieldSpec) = T.Record (map (second (applySubst subst)) fieldSpec)
+applySubst _ (T.AlgebraicType name) = T.AlgebraicType name
+applySubst subst (T.TypeAlias name t) = T.TypeAlias name (applySubst subst t)
+applySubst (var1, rep) var2 | var1 == var2 = rep
+applySubst _ var@(T.Var _ _ _) = var
 
 valueType :: Text -> Text -> State CompilerState (Either UnificationError T.Type)
 valueType modu valName = do

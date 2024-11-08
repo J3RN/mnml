@@ -254,7 +254,7 @@ moduleNamedType modu typeName = do
         <$> mapM
           ( \case
               (AST.TypeDecl n _ _) | n == name -> return (Right (T.AlgebraicType n))
-              (AST.TypeAliasDecl n t _) | n == name -> typify t
+              (AST.TypeAliasDecl n t _) | n == name -> (T.TypeAlias n <$>) <$> typify t
               _ -> return (Left (UnknownType typeName))
           )
           decls
