@@ -81,17 +81,12 @@ bind nodeId var t cs =
     then return (Just (OccursError var t nodeId))
     else do
       modify (eliminateAndInsert var t)
-      unify
-        ( map
-            ( \case
-                (T.CEqual t1 t2 nodeId') -> T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
-            )
-            cs
-        )
+      unify (map constraintEliminate cs)
   where
     subst = (var, t)
+    constraintEliminate (T.CEqual t1 t2 nodeId') = T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
     eliminateAndInsert :: T.Type -> T.Type -> Subst -> Subst
-    eliminateAndInsert src target = Map.insert src target . Map.map (eliminate src target)
+    eliminateAndInsert src target subs = Map.insert src target (Map.map (eliminate src target) subs)
     eliminate :: T.Type -> T.Type -> T.Type -> T.Type
     eliminate src target substType | substType == src = target
     eliminate src target (T.List substElemType) = T.List (eliminate src target substElemType)
