@@ -77,15 +77,12 @@ constrain (AST.EConstructor name _nodeId) = do
 constrain (AST.ELit lit _nodeId) =
   (,[]) <$> litType lit
 constrain (AST.ELambda args body nodeId) = do
-  oldBindings <- gets _bindings
-  -- Fresh argument type bindings
   argVars <- mapM (\arg -> (arg,) <$> freshTypeVar arg []) args
-  modify (over bindings (Map.union (Map.fromList argVars)))
-  -- Infer body constraints
-  (bt, bc) <- constrain body
-  -- Restore bindings
-  modify (set bindings oldBindings)
-  --
+  (bt, bc) <- withNewScope $ do
+    -- Fresh argument type bindings
+    modify (over bindings (Map.union (Map.fromList argVars)))
+    -- Infer body constraints
+    constrain body
   retType <- freshTypeVar "fun" []
   return (retType, T.CEqual retType (T.Fun (map snd argVars) bt) nodeId : bc)
 constrain (AST.EApp funExpr argExprs nodeId) = do
@@ -109,12 +106,10 @@ constrain (AST.ECase subj branches nodeId) = do
   return (retType, concat [patternConstraints, clauseConstraints, subjConstraints, patternSubConstraints, clauseSubConstraints])
   where
     constrainBranch :: (AST.Pattern, AST.Expr) -> Constrain ((T.Type, [T.Constraint]), (T.Type, [T.Constraint]))
-    constrainBranch (bPattern, bExpr) = do
-      oldBindings <- gets _bindings
-      patternConstraints <- constrainPattern bPattern
-      clauseConstriants <- constrain bExpr
-      modify (set bindings oldBindings)
-      return (patternConstraints, clauseConstriants)
+    constrainBranch (bPattern, bExpr) = withNewScope $ do
+        patternConstraints <- constrainPattern bPattern
+        clauseConstraints <- constrain bExpr
+        return (patternConstraints, clauseConstraints)
 constrain (AST.EBinary _op left right nodeId) = do
   (lType, lConstraints) <- constrain left
   (rType, rConstraints) <- constrain right
@@ -178,6 +173,14 @@ freshTypeVar name traits = state (freshTypeVar' name traits)
     freshTypeVar' n ts s =
       let newTVId = _nextVarId s
        in (T.Var n ts newTVId, s {_nextVarId = newTVId + 1})
+
+-- Runs a function within its own scope (inheriting the existing scope)
+withNewScope ::  Constrain a -> Constrain a
+withNewScope f = do
+  oldBindings <- gets _bindings
+  result <- f
+  modify (set bindings oldBindings)
+  return result
 
 litType :: AST.Literal -> Constrain T.Type
 -- For now, an "int" literal (e.g. "5") will be interpreted as "numeric type" (could be float)
