@@ -82,24 +82,24 @@ constrain (AST.ELambda args body nodeId) = do
     (bt, bc) <- constrain body
     return (argVars, bt, bc)
   retType <- freshTypeVar "fun" []
-  return (retType, T.CEqual retType (T.Fun argVars bodyType) nodeId : bodyConstraints)
+  return (retType, T.CEqual nodeId retType (T.Fun argVars bodyType) : bodyConstraints)
 constrain (AST.EApp funExpr argExprs nodeId) = do
   (funType, fc) <- constrain funExpr
   argResults <- mapM constrain argExprs
   let argTypes = map fst argResults
       argConstraints = concatMap snd argResults
   retType <- freshTypeVar "ret" []
-  return (retType, T.CEqual (T.Fun argTypes retType) funType nodeId : fc ++ argConstraints)
+  return (retType, T.CEqual nodeId (T.Fun argTypes retType) funType : fc ++ argConstraints)
 constrain (AST.ECase subj branches nodeId) = do
   (subjType, subjConstraints) <- constrain subj
   branchRes <- mapM constrainBranch branches
   retType <- freshTypeVar "ret" []
   let (patternRes, clauseRes) = unzip branchRes
       -- The subject type will need to match every pattern
-      patternConstraints = map ((\x -> T.CEqual subjType x nodeId) . fst) patternRes
+      patternConstraints = map (T.CEqual nodeId subjType . fst) patternRes
       patternSubConstraints = concatMap snd patternRes
       -- Every clause type must match the return type of the case expression
-      clauseConstraints = map ((\x -> T.CEqual retType x nodeId) . fst) clauseRes
+      clauseConstraints = map (T.CEqual nodeId retType . fst) clauseRes
       clauseSubConstraints = concatMap snd clauseRes
   return (retType, concat [patternConstraints, clauseConstraints, subjConstraints, patternSubConstraints, clauseSubConstraints])
   where
@@ -112,22 +112,22 @@ constrain (AST.EBinary _op left right nodeId) = do
   (lType, lConstraints) <- constrain left
   (rType, rConstraints) <- constrain right
   retVar <- freshTypeVar "ret" [T.Numeric]
-  let lConstraint = T.CEqual retVar lType nodeId
-      rConstraint = T.CEqual retVar rType nodeId
+  let lConstraint = T.CEqual nodeId retVar lType
+      rConstraint = T.CEqual nodeId retVar rType
   return (retVar, lConstraint : rConstraint : lConstraints ++ rConstraints)
 constrain (AST.ERecord fields nodeId) = do
   fieldResults <- mapM (constrain . snd) fields
   let typedFields = zip (map fst fields) (map fst fieldResults)
       fieldConstraints = concatMap snd fieldResults
   retType <- freshTypeVar "ret" []
-  return (retType, T.CEqual retType (T.Record typedFields) nodeId : fieldConstraints)
+  return (retType, T.CEqual nodeId retType (T.Record typedFields) : fieldConstraints)
 constrain (AST.EList elems nodeId) = do
   elemResults <- mapM constrain elems
   elemType <- freshTypeVar "elem" []
   retType <- freshTypeVar "ret" []
-  let consistencyConstraints = map ((\t -> T.CEqual elemType t nodeId) . fst) elemResults
+  let consistencyConstraints = map (T.CEqual nodeId elemType . fst) elemResults
       elemConstraints = concatMap snd elemResults
-  return (retType, T.CEqual (T.List elemType) retType nodeId : consistencyConstraints ++ elemConstraints)
+  return (retType, T.CEqual nodeId (T.List elemType) retType : consistencyConstraints ++ elemConstraints)
 
 -- Create constraints based on patterns
 constrainPattern :: AST.Pattern -> Constrain (T.Type, [T.Constraint])
@@ -143,12 +143,12 @@ constrainPattern (AST.PConstructor name argPatterns nodeId) = do
       argCons <- mapM constrainPattern argPatterns
       let argTypes = map fst argCons
           argSubCons = concatMap snd argCons
-      return (retType, T.CEqual (T.Fun argTypes retType) funType nodeId : argSubCons)
+      return (retType, T.CEqual nodeId (T.Fun argTypes retType) funType : argSubCons)
     Right retType -> return (retType, [])
 constrainPattern (AST.PRecord fieldSpec nodeId) = do
   (fieldTypes, fieldConstraints) <- foldM foldRecord ([], []) fieldSpec
   retType <- freshTypeVar "record" []
-  return (retType, T.CEqual (T.Record fieldTypes) retType nodeId : fieldConstraints)
+  return (retType, T.CEqual nodeId (T.Record fieldTypes) retType : fieldConstraints)
   where
     foldRecord :: ([(Text, T.Type)], [T.Constraint]) -> (Text, AST.Pattern) -> Constrain ([(Text, T.Type)], [T.Constraint])
     foldRecord (fields, fieldCons) (fieldName, fieldPattern) = do
@@ -157,7 +157,7 @@ constrainPattern (AST.PRecord fieldSpec nodeId) = do
 constrainPattern (AST.PList elemPats nodeId) = do
   elemCons <- mapM constrainPattern elemPats
   elemType <- freshTypeVar "ret" []
-  let retCons = map ((\elemT -> T.CEqual elemType elemT nodeId) . fst) elemCons
+  let retCons = map (T.CEqual nodeId elemType . fst) elemCons
       elemSubCons = concatMap snd elemCons
   return (elemType, retCons ++ elemSubCons)
 constrainPattern (AST.PLiteral lit _) = (,[]) <$> litType lit

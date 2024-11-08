@@ -37,34 +37,34 @@ type Subst = Map T.Type T.Type
 unify :: [T.Constraint] -> State Subst (Maybe UnificationError)
 unify [] = return Nothing
 -- Delete
-unify ((T.CEqual t1 t2 _) : cs) | t1 == t2 = unify cs
+unify ((T.CEqual _ t1 t2) : cs) | t1 == t2 = unify cs
 -- Decompose
-unify ((T.CEqual (T.List a) (T.List b) nodeId) : cs) = unify (T.CEqual a b nodeId : cs)
-unify ((T.CEqual (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2) nodeId) : cs) =
+unify ((T.CEqual nodeId (T.List a) (T.List b) ) : cs) = unify (T.CEqual nodeId a b : cs)
+unify ((T.CEqual nodeId (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2)) : cs) =
   if length argTypes1 /= length argTypes2
     then return (Just (ArgumentLengthMismatch nodeId))
     else
-      let retCon = T.CEqual retType1 retType2 nodeId
-          argTypeCons = zipWith (\t1 t2 -> T.CEqual t1 t2 nodeId) argTypes1 argTypes2
+      let retCon = T.CEqual nodeId retType1 retType2
+          argTypeCons = zipWith (T.CEqual nodeId) argTypes1 argTypes2
        in unify (retCon : (argTypeCons ++ cs))
-unify ((T.CEqual (T.Record fieldSpec1) (T.Record fieldSpec2) nodeId) : cs) =
+unify ((T.CEqual nodeId (T.Record fieldSpec1) (T.Record fieldSpec2)) : cs) =
   let commonFields = intersectWith (,) fieldSpec1 fieldSpec2
-      fieldConstraints = map (\(_, (t1, t2)) -> T.CEqual t1 t2 nodeId) commonFields
+      fieldConstraints = map (\(_, (t1, t2)) -> T.CEqual nodeId t1 t2) commonFields
    in unify (fieldConstraints ++ cs)
 -- Eliminate
 -- We don't want to swap incompatible vars back and forth forever, so we try both sides
 -- and fail if both sides are incompatible vars
-unify ((T.CEqual var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2) nodeId) : cs)
+unify ((T.CEqual nodeId var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2)) : cs)
   -- If they're the same, choose the var with the lowest ID
   | List.sort traits1 == List.sort traits2 = if id1 < id2 then bind nodeId var2 var1 cs else bind nodeId var1 var2 cs
   | (var2 `implements`) `all` traits1 = bind nodeId var1 var2 cs
   | (var1 `implements`) `all` traits2 = bind nodeId var2 var1 cs
   | otherwise = return (Just (ExpectedTraits var2 traits1 nodeId))
-unify ((T.CEqual var@(T.Var _ traits _) t nodeId) : cs) | (t `implements`) `all` traits = bind nodeId var t cs
+unify ((T.CEqual nodeId var@(T.Var _ traits _) t) : cs) | (t `implements`) `all` traits = bind nodeId var t cs
 -- Swap
-unify ((T.CEqual t var@(T.Var _ _ _) nodeId) : cs) = unify (T.CEqual var t nodeId : cs)
+unify ((T.CEqual nodeId t var@(T.Var _ _ _)) : cs) = unify (T.CEqual nodeId var t : cs)
 -- Conflict
-unify ((T.CEqual t1 t2 nodeId) : _) = return (Just (UnificationError t1 t2 nodeId))
+unify ((T.CEqual nodeId t1 t2) : _) = return (Just (UnificationError t1 t2 nodeId))
 
 implements :: T.Type -> T.Trait -> Bool
 implements (T.Var _ traits _) T.Numeric = T.Numeric `elem` traits
@@ -84,7 +84,7 @@ bind nodeId var t cs =
       unify (map constraintEliminate cs)
   where
     subst = (var, t)
-    constraintEliminate (T.CEqual t1 t2 nodeId') = T.CEqual (applySubst subst t1) (applySubst subst t2) nodeId'
+    constraintEliminate (T.CEqual nodeId' t1 t2) = T.CEqual nodeId' (applySubst subst t1) (applySubst subst t2)
     eliminateAndInsert :: T.Type -> T.Type -> Subst -> Subst
     eliminateAndInsert src target subs = Map.insert src target (Map.map (eliminate src target) subs)
     eliminate :: T.Type -> T.Type -> T.Type -> T.Type

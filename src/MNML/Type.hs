@@ -11,7 +11,7 @@ import           MNML.AST  (NodeId)
 type VarId = Integer
 
 data Constraint
-  = CEqual Type Type NodeId
+  = CEqual NodeId Type Type
   deriving (Show)
 
 data Trait = Numeric
