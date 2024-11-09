@@ -53,6 +53,10 @@ spec =
         let (res, _cs) = unify' "main = (x) => { x + 3.14 }"
         res `shouldBe` Right (T.Fun [T.Float] T.Float)
 
+      it "infers parameters and result may be the same" $ do
+        let (res, _cs) = unify' "main = (x, y) => { x + y }"
+        res `shouldBe` Right (T.Fun [T.Var "ret" [T.Numeric] 2, T.Var "ret" [T.Numeric] 2] (T.Var "ret" [T.Numeric] 2))
+
     describe "lists" $ do
       it "unifies empty list" $ do
         let (res, _cs) = unify' "main = []"
