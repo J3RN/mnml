@@ -67,10 +67,10 @@ unify ((T.CEqual nodeId t var@(T.Var _ _ _)) : cs) = unify (T.CEqual nodeId var 
 unify ((T.CEqual nodeId t1 t2) : _) = return (Just (UnificationError t1 t2 nodeId))
 
 implements :: T.Type -> T.Trait -> Bool
-implements (T.Var _ traits _) T.Numeric = T.Numeric `elem` traits
-implements T.Int T.Numeric              = True
-implements T.Float T.Numeric            = True
-implements _ _                          = False
+implements (T.Var _ varTraits _) trait = trait `elem` varTraits
+implements T.Int T.Numeric             = True
+implements T.Float T.Numeric           = True
+implements _ _                         = False
 
 intersectWith :: (Ord a) => (b -> b -> c) -> [(a, b)] -> [(a, b)] -> [(a, c)]
 intersectWith comb a b = Map.toList ((Map.intersectionWith comb `on` Map.fromList) a b)
