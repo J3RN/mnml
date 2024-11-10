@@ -109,13 +109,17 @@ spec =
         let (res, _cs) = unify' (Text.unlines ["main = case foo of", "Just(n) -> n", "None -> 5"])
         res `shouldBe` Right (T.Var "num" [T.Numeric] 4)
 
+      it "unifies branches with different literals for the same record field" $ do
+        let (res, _cs) = unify' (Text.unlines ["main = (foo) => {", "case foo of", "{foo: \"bar\"} -> 1", "{foo: \"baz\"} -> 2", "}"])
+        res `shouldBe` Right (T.Fun [T.PartialRecord [("foo", T.String)] 2] (T.Var "num" [T.Numeric] 3))
+
       it "unifies disjoint record patterns" $ do
         let (res, _cs) = unify' (Text.unlines ["main = (x) => {", "case x of", "{foo: \"bar\"} -> 1", "{bar: 1.0} -> 2", "}"])
-        res `shouldBe` Right (T.Fun [T.Record [("foo", T.String), ("bar", T.Float)]] (T.Var "num" [T.Numeric] 3))
+        res `shouldBe` Right (T.Fun [T.PartialRecord [("foo", T.String), ("bar", T.Float)] 2] (T.Var "num" [T.Numeric] 3))
 
       it "does not unify inconsistent record patterns" $ do
         let (res, _cs) = unify' (Text.unlines ["main = case foo of", "{foo: \"bar\"} -> 1", "{foo: 1.0} -> 2"])
-        res `shouldBe` Left (UnificationError T.Float T.String 8)
+        res `shouldBe` Left (UnificationError T.String T.Float 8)
 
       it "does not unify non-matching patterns" $ do
         let (res, _cs) = unify' (Text.unlines ["main = case foo of", "3 -> \"Fizz\"", "'5' -> \"Buzz\""])

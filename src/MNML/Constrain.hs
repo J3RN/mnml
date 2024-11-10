@@ -148,7 +148,8 @@ constrainPattern (AST.PConstructor name argPatterns nodeId) = do
 constrainPattern (AST.PRecord fieldSpec nodeId) = do
   (fieldTypes, fieldConstraints) <- foldM foldRecord ([], []) fieldSpec
   retType <- freshTypeVar "record" []
-  return (retType, T.CEqual nodeId (T.Record fieldTypes) retType : fieldConstraints)
+  partialRecordType <- freshPartialRecord fieldTypes
+  return (retType, T.CEqual nodeId retType partialRecordType : fieldConstraints)
   where
     foldRecord :: ([(Text, T.Type)], [T.Constraint]) -> (Text, AST.Pattern) -> Constrain ([(Text, T.Type)], [T.Constraint])
     foldRecord (fields, fieldCons) (fieldName, fieldPattern) = do
@@ -168,6 +169,13 @@ freshTypeVar name traits = state (freshTypeVar' name traits)
     freshTypeVar' n ts s =
       let newTVId = _nextVarId s
        in (T.Var n ts newTVId, s {_nextVarId = newTVId + 1})
+
+freshPartialRecord :: [T.FieldSpec] -> Constrain T.Type
+freshPartialRecord fields = state (freshPartialRecord' fields)
+  where
+    freshPartialRecord' fs s =
+      let newVarId = _nextVarId s
+       in (T.PartialRecord fs newVarId, s {_nextVarId = newVarId + 1})
 
 -- Runs a function within its own scope (inheriting the existing scope)
 withNewScope :: Constrain a -> Constrain a

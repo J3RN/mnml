@@ -32,4 +32,6 @@ data Type
   | TypeAlias Text Type
   -- Type var "a" requiring types to implement traits
   | Var Text [Trait] VarId
+  -- A "partial record"; similar to a variable with traits
+  | PartialRecord [FieldSpec] VarId
   deriving (Eq, Ord, Show)
