@@ -31,10 +31,11 @@ data UnificationError
   deriving (Eq, Show)
 
 type Subst = Map T.Type T.Type
+type Constrain = State Subst
 
 -- Unify a set of constraints
 
-unify :: [T.Constraint] -> State Subst (Maybe UnificationError)
+unify :: [T.Constraint] -> Constrain (Maybe UnificationError)
 unify [] = return Nothing
 -- Delete
 unify ((T.CEqual _ t1 t2) : cs) | t1 == t2 = unify cs
@@ -75,7 +76,7 @@ implements _ _                         = False
 intersectWith :: (Ord a) => (b -> b -> c) -> [(a, b)] -> [(a, b)] -> [(a, c)]
 intersectWith comb a b = Map.toList ((Map.intersectionWith comb `on` Map.fromList) a b)
 
-bind :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> State Subst (Maybe UnificationError)
+bind :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> Constrain (Maybe UnificationError)
 bind nodeId var t cs =
   if var `occursIn` t
     then return (Just (OccursError var t nodeId))
