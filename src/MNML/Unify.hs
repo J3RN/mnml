@@ -39,7 +39,7 @@ unify [] = return Nothing
 -- Delete
 unify ((T.CEqual _ t1 t2) : cs) | t1 == t2 = unify cs
 -- Decompose
-unify ((T.CEqual nodeId (T.List a) (T.List b) ) : cs) = unify (T.CEqual nodeId a b : cs)
+unify ((T.CEqual nodeId (T.List a) (T.List b)) : cs) = unify (T.CEqual nodeId a b : cs)
 unify ((T.CEqual nodeId (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2)) : cs) =
   if length argTypes1 /= length argTypes2
     then return (Just (ArgumentLengthMismatch nodeId))

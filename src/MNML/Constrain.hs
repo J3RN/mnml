@@ -105,9 +105,9 @@ constrain (AST.ECase subj branches nodeId) = do
   where
     constrainBranch :: (AST.Pattern, AST.Expr) -> Constrain ((T.Type, [T.Constraint]), (T.Type, [T.Constraint]))
     constrainBranch (bPattern, bExpr) = withNewScope $ do
-        patternConstraints <- constrainPattern bPattern
-        clauseConstraints <- constrain bExpr
-        return (patternConstraints, clauseConstraints)
+      patternConstraints <- constrainPattern bPattern
+      clauseConstraints <- constrain bExpr
+      return (patternConstraints, clauseConstraints)
 constrain (AST.EBinary _op left right nodeId) = do
   (lType, lConstraints) <- constrain left
   (rType, rConstraints) <- constrain right
@@ -170,7 +170,7 @@ freshTypeVar name traits = state (freshTypeVar' name traits)
        in (T.Var n ts newTVId, s {_nextVarId = newTVId + 1})
 
 -- Runs a function within its own scope (inheriting the existing scope)
-withNewScope ::  Constrain a -> Constrain a
+withNewScope :: Constrain a -> Constrain a
 withNewScope f = do
   oldBindings <- gets _bindings
   result <- f
