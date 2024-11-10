@@ -95,7 +95,6 @@ bind nodeId var t cs =
     eliminate _ _ substType = substType
 
 occursIn :: T.Type -> T.Type -> Bool
--- Type aliases currently have to be qualified, so no vars
 occursIn var (T.TypeAlias _ t) = occursIn var t
 -- Algebraic types currently don't support vars (but will)
 occursIn _ (T.AlgebraicType _) = False
