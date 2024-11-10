@@ -50,10 +50,10 @@ unify ((T.CEqual nodeId (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2)) :
       let retCon = T.CEqual nodeId retType1 retType2
           argTypeCons = zipWith (T.CEqual nodeId) argTypes1 argTypes2
        in unify (retCon : (argTypeCons ++ cs))
-unify ((T.CEqual nodeId (T.Record fieldSpec1) (T.Record fieldSpec2)) : cs) =
-  let commonFields = intersectWith (,) fieldSpec1 fieldSpec2
-      fieldConstraints = map (\(_, (t1, t2)) -> T.CEqual nodeId t1 t2) commonFields
-   in unify (fieldConstraints ++ cs)
+unify ((T.CEqual nodeId rec1@(T.Record fieldSpec1) rec2@(T.Record fieldSpec2)) : cs) =
+  if List.sort (map fst fieldSpec1) == List.sort (map fst fieldSpec2)
+  then unify (commonFieldConstraints nodeId fieldSpec1 fieldSpec2 ++ cs)
+  else return (Just (UnificationError rec1 rec2 nodeId))
 -- Eliminate
 -- We don't want to swap incompatible vars back and forth forever, so we try both sides
 -- and fail if both sides are incompatible vars
