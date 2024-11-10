@@ -95,11 +95,6 @@ bind nodeId var t cs =
     eliminate _ _ substType = substType
 
 occursIn :: T.Type -> T.Type -> Bool
-occursIn var (T.TypeAlias _ t) = occursIn var t
--- Algebraic types currently don't support vars (but will)
-occursIn _ (T.AlgebraicType _) = False
-occursIn var1 var2 | var1 == var2 = True
-occursIn _ (T.Var _ _ _) = False
 occursIn _ T.Int = False
 occursIn _ T.Float = False
 occursIn _ T.Char = False
@@ -107,6 +102,11 @@ occursIn _ T.String = False
 occursIn var (T.List elemType) = var `occursIn` elemType
 occursIn var (T.Fun argTypes retType) = any (var `occursIn`) argTypes || var `occursIn` retType
 occursIn var (T.Record fieldSpec) = any ((var `occursIn`) . snd) fieldSpec
+-- Algebraic types currently don't support vars (but will)
+occursIn _ (T.AlgebraicType _) = False
+occursIn var (T.TypeAlias _ t) = occursIn var t
+occursIn var1 var2 | var1 == var2 = True
+occursIn _ (T.Var _ _ _) = False
 
 applySubst :: (T.Type, T.Type) -> T.Type -> T.Type
 applySubst _ T.Int = T.Int
