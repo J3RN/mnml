@@ -1,5 +1,6 @@
 module MNML.Type
     ( Constraint (..)
+    , FieldSpec
     , Trait (..)
     , Type (..)
     , VarId
@@ -17,6 +18,8 @@ data Constraint
 data Trait = Numeric
   deriving (Eq, Ord, Show)
 
+type FieldSpec = (Text, Type)
+
 data Type
   = Int
   | Float
@@ -24,7 +27,7 @@ data Type
   | String
   | List Type
   | Fun [Type] Type
-  | Record [(Text, Type)]
+  | Record [FieldSpec]
   | AlgebraicType Text
   | TypeAlias Text Type
   -- Type var "a" requiring types to implement traits
