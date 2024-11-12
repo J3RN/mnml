@@ -11,7 +11,7 @@ import qualified MNML.Type           as T
 import           MNML.Unify
 import           Test.Hspec
 
-unify' :: Text -> (Either UnificationError T.Type, CompilerState)
+unify' :: Text -> (Either [UnificationError] T.Type, CompilerState)
 unify' source = runState (valueType "test" "main") compilerState
   where
     compilerState = emptyState {_modules = Map.fromList [("test", source)]}
@@ -72,7 +72,7 @@ spec =
 
       it "does not unify inconsistent list" $ do
         let (res, _cs) = unify' "main = [1, \"Hello\"]"
-        res `shouldBe` Left (UnificationError (T.Var "num" [T.Numeric] 0) T.String 1)
+        res `shouldBe` Left [UnificationError (T.Var "num" [T.Numeric] 0) T.String 1]
 
     describe "records" $ do
       it "unifies singleton record" $ do
@@ -106,8 +106,8 @@ spec =
         res `shouldBe` Right (T.Var "num" [T.Numeric] 0)
 
       it "unifies two branch case" $ do
-        let (res, _cs) = unify' (Text.unlines ["main = case foo of", "Just(n) -> n", "None -> 5"])
-        res `shouldBe` Right (T.Var "num" [T.Numeric] 4)
+        let (res, _cs) = unify' (Text.unlines ["MaybeInt = Just(Int) | None", "main = case foo of", "Just(n) -> n", "None -> 5"])
+        res `shouldBe` Right T.Int
 
       it "unifies branches with different literals for the same record field" $ do
         let (res, _cs) = unify' (Text.unlines ["main = (foo) => {", "case foo of", "{foo: \"bar\"} -> 1", "{foo: \"baz\"} -> 2", "}"])
@@ -119,12 +119,12 @@ spec =
 
       it "does not unify inconsistent record patterns" $ do
         let (res, _cs) = unify' (Text.unlines ["main = case foo of", "{foo: \"bar\"} -> 1", "{foo: 1.0} -> 2"])
-        res `shouldBe` Left (UnificationError T.String T.Float 8)
+        res `shouldBe` Left [UnificationError T.String T.Float 8]
 
       it "does not unify non-matching patterns" $ do
         let (res, _cs) = unify' (Text.unlines ["main = case foo of", "3 -> \"Fizz\"", "'5' -> \"Buzz\""])
-        res `shouldBe` Left (UnificationError (T.Var "num" [T.Numeric] 1) T.Char 1)
+        res `shouldBe` Left [UnificationError (T.Var "num" [T.Numeric] 1) T.Char 1]
 
       it "does not unify non-matching return types" $ do
         let (res, _cs) = unify' (Text.unlines ["main = case foo of", "3 -> \"Fizz\"", "5 -> 'B'"])
-        res `shouldBe` Left (UnificationError T.String T.Char 1)
+        res `shouldBe` Left [UnificationError T.String T.Char 1]

@@ -38,6 +38,8 @@ data ConstrainEnv
       , _errors    :: [ConstraintError]
       }
 
+type Constrain a = StateT ConstrainEnv (State CompilerState) a
+
 initialEnv :: Text -> ConstrainEnv
 initialEnv modu =
   ConstrainEnv
@@ -50,7 +52,6 @@ initialEnv modu =
 bindings :: Lens' ConstrainEnv Bindings
 bindings = lens _bindings (\us bin -> us {_bindings = bin})
 
-type Constrain a = StateT ConstrainEnv (State CompilerState) a
 
 addError :: ConstraintError -> Constrain ()
 addError err = modify (\s -> s {_errors = err : _errors s})
@@ -271,12 +272,17 @@ moduleNamedType modu typeName = do
           )
           decls
 
-valueConstraints :: Text -> Text -> State CompilerState (Either ConstraintError (T.Type, [T.Constraint]))
+valueConstraints :: Text -> Text -> State CompilerState (Either [ConstraintError] (T.Type, [T.Constraint]))
 valueConstraints modu valName = do
   def <- valueDef modu valName
   case def of
-    Right expr -> Right <$> evalStateT (constrain expr) (initialEnv modu)
-    Left err   -> return (Left err)
+    Right expr -> res <$> runStateT (constrain expr) (initialEnv modu)
+    Left err   -> return (Left [err])
+  where
+    res :: ((T.Type, [T.Constraint]), ConstrainEnv) -> Either [ConstraintError] (T.Type, [T.Constraint])
+    res (t, ConstrainEnv {_errors = []})   = Right t
+    res (_, ConstrainEnv {_errors = errs}) = Left errs
+
 
 valueDef :: Text -> Text -> State CompilerState (Either ConstraintError AST.Expr)
 valueDef modu valName = do

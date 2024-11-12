@@ -171,12 +171,12 @@ applySubst (var1, rep) var2 | var1 == var2 = rep
 applySubst _ var@(T.Var _ _ _) = var
 applySubst subst (T.PartialRecord fieldSpec prId) = T.PartialRecord (map (second (applySubst subst)) fieldSpec) prId
 
-valueType :: Text -> Text -> State CompilerState (Either UnificationError T.Type)
+valueType :: Text -> Text -> State CompilerState (Either [UnificationError] T.Type)
 valueType modu valName = do
   constraintsRes <- C.valueConstraints modu valName
   case constraintsRes of
     Right (inferType, constraints) ->
       case runState (unify constraints) Map.empty of
-        (Just err, _) -> return (Left err)
+        (Just err, _) -> return (Left [err])
         (Nothing, subst) -> return (Right (fromMaybe inferType (subst !? inferType)))
-    Left constrainErr -> return (Left (ConstraintError constrainErr))
+    Left constrainErrs -> return (Left (map ConstraintError constrainErrs))
