@@ -52,8 +52,8 @@ unify ((T.CEqual nodeId (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2)) :
        in unify (retCon : (argTypeCons ++ cs))
 unify ((T.CEqual nodeId rec1@(T.Record fieldSpec1) rec2@(T.Record fieldSpec2)) : cs) =
   if List.sort (map fst fieldSpec1) == List.sort (map fst fieldSpec2)
-  then unify (commonFieldConstraints nodeId fieldSpec1 fieldSpec2 ++ cs)
-  else return (Just (UnificationError rec1 rec2 nodeId))
+    then unify (commonFieldConstraints nodeId fieldSpec1 fieldSpec2 ++ cs)
+    else return (Just (UnificationError rec1 rec2 nodeId))
 -- Eliminate
 -- We don't want to swap incompatible vars back and forth forever, so we try both sides
 -- and fail if both sides are incompatible vars
@@ -70,19 +70,21 @@ unify ((T.CEqual nodeId var@(T.Var _ traits _) t) : cs) | (t `implements`) `all`
 unify ((T.CEqual nodeId pRec1@(T.PartialRecord fieldSpec1 id1) pRec2@(T.PartialRecord fieldSpec2 _)) : cs) =
   let commonFieldCs = commonFieldConstraints nodeId fieldSpec1 fieldSpec2
       supersetFieldSpec = fieldUnion fieldSpec1 fieldSpec2
-   in
-    if supersetFieldSpec == fieldSpec1 then bind' nodeId pRec2 pRec1 (commonFieldCs ++ cs)
-    else if supersetFieldSpec == fieldSpec2 then bind' nodeId pRec1 pRec2 (commonFieldCs ++ cs)
-    else
-      -- I can get away with stealing pRec1's ID for the superset because this record has different fields
-      -- Hopefully.
-      let supersetPartialRecord = T.PartialRecord supersetFieldSpec id1
-      in do
-        pRec1BindRes <- bind nodeId pRec1 supersetPartialRecord cs
-        bindRes <- either (return . Left) (bind nodeId pRec2 supersetPartialRecord) pRec1BindRes
-        case bindRes of
-          Left err  -> return (Just err)
-          Right cs' -> unify (cs' ++ commonFieldCs)
+   in if supersetFieldSpec == fieldSpec1
+        then bind' nodeId pRec2 pRec1 (commonFieldCs ++ cs)
+        else
+          if supersetFieldSpec == fieldSpec2
+            then bind' nodeId pRec1 pRec2 (commonFieldCs ++ cs)
+            else -- I can get away with stealing pRec1's ID for the superset because this record has different fields
+            -- Hopefully.
+
+              let supersetPartialRecord = T.PartialRecord supersetFieldSpec id1
+               in do
+                    pRec1BindRes <- bind nodeId pRec1 supersetPartialRecord cs
+                    bindRes <- either (return . Left) (bind nodeId pRec2 supersetPartialRecord) pRec1BindRes
+                    case bindRes of
+                      Left err  -> return (Just err)
+                      Right cs' -> unify (cs' ++ commonFieldCs)
   where
     -- Combine the field specs.  The new, "super" field spec will use the type
     -- in fs1, if it exists, or otherwise the field spec in fs2.
