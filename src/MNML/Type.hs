@@ -13,7 +13,7 @@ type VarId = Integer
 
 data Constraint
   = CEqual NodeId Type Type
-  deriving (Show)
+  deriving (Eq, Show)
 
 data Trait = Numeric
   deriving (Eq, Ord, Show)
