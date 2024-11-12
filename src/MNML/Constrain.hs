@@ -4,8 +4,8 @@ module MNML.Constrain
     ) where
 
 import           Control.Monad       (foldM)
-import           Control.Monad.State (State, StateT, evalStateT, gets, lift,
-                                      modify, state)
+import           Control.Monad.State (State, StateT, gets, lift, modify,
+                                      runStateT, state)
 import           Data.Bifunctor      (first)
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
@@ -18,6 +18,10 @@ import qualified MNML.Parse          as P
 import qualified MNML.Type           as T
 
 type Bindings = Map Text T.Type
+
+type QualifiedValueReference = (Text, Text)
+
+type PendingType = (QualifiedValueReference, T.Type, AST.NodeId)
 
 data ConstraintError
   = UnknownVar AST.NodeId
@@ -32,10 +36,11 @@ data ConstraintError
 
 data ConstrainEnv
   = ConstrainEnv
-      { _bindings  :: Bindings
-      , _module    :: Text
-      , _nextVarId :: T.VarId
-      , _errors    :: [ConstraintError]
+      { _bindings     :: Bindings
+      , _module       :: Text
+      , _nextVarId    :: T.VarId
+      , _pendingTypes :: [PendingType]
+      , _errors       :: [ConstraintError]
       }
 
 type Constrain a = StateT ConstrainEnv (State CompilerState) a
@@ -46,12 +51,15 @@ initialEnv modu =
     { _bindings = Map.empty,
       _module = modu,
       _nextVarId = 0,
+      _pendingTypes = [],
       _errors = []
     }
 
 bindings :: Lens' ConstrainEnv Bindings
 bindings = lens _bindings (\us bin -> us {_bindings = bin})
 
+pendingTypes :: Lens' ConstrainEnv [PendingType]
+pendingTypes = lens _pendingTypes (\us pt -> us {_pendingTypes = pt})
 
 addError :: ConstraintError -> Constrain ()
 addError err = modify (\s -> s {_errors = err : _errors s})
@@ -66,8 +74,9 @@ constrain (AST.EVar name nodeId) = do
     -- The presence of a var doesn't inform it's type
     Just t -> return (t, [])
     Nothing -> do
-      addError (UnknownVar nodeId)
       newTVar <- freshTypeVar name []
+      modu <- gets _module
+      modify (over pendingTypes (((modu, name), newTVar, nodeId) :))
       return (newTVar, [])
 constrain (AST.EConstructor name _nodeId) = do
   modu <- gets _module
@@ -274,15 +283,27 @@ moduleNamedType modu typeName = do
 
 valueConstraints :: Text -> Text -> State CompilerState (Either [ConstraintError] (T.Type, [T.Constraint]))
 valueConstraints modu valName = do
-  def <- valueDef modu valName
-  case def of
-    Right expr -> res <$> runStateT (constrain expr) (initialEnv modu)
-    Left err   -> return (Left [err])
+  res <$> runStateT (valueConstraints' modu valName) (initialEnv modu)
   where
     res :: ((T.Type, [T.Constraint]), ConstrainEnv) -> Either [ConstraintError] (T.Type, [T.Constraint])
     res (t, ConstrainEnv {_errors = []})   = Right t
     res (_, ConstrainEnv {_errors = errs}) = Left errs
 
+valueConstraints' :: Text -> Text -> Constrain (T.Type, [T.Constraint])
+valueConstraints' modu valName = do
+  def <- lift (valueDef modu valName)
+  case def of
+    Right expr -> do
+      modify (\s -> s {_module = modu})
+      res <- constrain expr
+      pTypes <- gets _pendingTypes
+      foldM foldPendingType res pTypes
+    Left err -> giveUp err valName
+  where
+    foldPendingType :: (T.Type, [T.Constraint]) -> PendingType -> Constrain (T.Type, [T.Constraint])
+    foldPendingType (t, cs) ((modu', valName'), t', nodeId) = do
+      (t'', cs') <- valueConstraints' modu' valName'
+      return (t, T.CEqual nodeId t' t'' : cs' ++ cs)
 
 valueDef :: Text -> Text -> State CompilerState (Either ConstraintError AST.Expr)
 valueDef modu valName = do
