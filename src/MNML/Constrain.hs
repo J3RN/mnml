@@ -294,7 +294,7 @@ valueConstraints' modu valName = do
   def <- lift (valueDef modu valName)
   case def of
     Right expr -> do
-      modify (\s -> s {_module = modu})
+      modify (\s -> s {_module = modu, _pendingTypes = []})
       res <- constrain expr
       pTypes <- gets _pendingTypes
       foldM foldPendingType res pTypes
