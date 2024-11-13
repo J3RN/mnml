@@ -3,25 +3,25 @@ module MNML
     , Modules
     , SourceSpan (..)
     , emptyState
+    , moduleDefCache
     , stateModules
     , stateSpans
     , stateTypes
-    , moduleDefCache
-    , valueDefCache
     , valueConstraintsCache
+    , valueDefCache
     , writeThrough
     ) where
 
-import Control.Monad.State
-import           Data.Map    (Map)
-import qualified Data.Map    as Map
-import           Data.Text   (Text)
-import           Lens.Micro  (Lens', lens, (^.), over)
-import           MNML.AST    (NodeId)
-import qualified MNML.AST as AST
-import           MNML.Type   (Type)
-import qualified MNML.Type as T
-import           Text.Parsec (SourcePos)
+import           Control.Monad.State
+import           Data.Map            (Map, (!?))
+import qualified Data.Map            as Map
+import           Data.Text           (Text)
+import           Lens.Micro          (Lens', lens, over, (^.))
+import           MNML.AST            (NodeId)
+import qualified MNML.AST            as AST
+import           MNML.Type           (Type)
+import qualified MNML.Type           as T
+import           Text.Parsec         (SourcePos)
 
 data SourceSpan
   = SourceSpan
@@ -39,16 +39,18 @@ type Spans = Map NodeId SourceSpan
 type Types = Map NodeId Type
 
 type ModuleDefCache = Map Text [AST.Declaration]
+
 type ValueDefCache = Map (Text, Text) AST.Expr
+
 type ValueConstraintsCache = Map (Text, Text) (T.Type, [T.Constraint])
 
 data CompilerState
   = CompilerState
-      { _spans   :: Spans
-      , _modules :: Modules
-      , _types   :: Types
-      , _moduleDefCache :: ModuleDefCache
-      , _valueDefCache :: ValueDefCache
+      { _spans                 :: Spans
+      , _modules               :: Modules
+      , _types                 :: Types
+      , _moduleDefCache        :: ModuleDefCache
+      , _valueDefCache         :: ValueDefCache
       , _valueConstraintsCache :: ValueConstraintsCache
       }
   deriving (Eq, Show)
@@ -86,18 +88,13 @@ valueConstraintsCache = lens _valueConstraintsCache (\cs vcc -> cs {_valueConstr
 
 -- Cache ops
 
-writeThrough :: (CompilerState -> Maybe b) -> (b -> CompilerState -> CompilerState) -> (a -> b) -> a -> State CompilerState b
-writeThrough getter setter calc key = do
-  maybeVal <- gets getter
+writeThrough :: (Ord key) => Lens' CompilerState (Map key val) -> (key -> State CompilerState (Either err val)) -> key -> State CompilerState (Either err val)
+writeThrough l calc key = do
+  maybeVal <- gets ((!? key) . (^. l))
   case maybeVal of
-    Just val -> return val
-    Nothing -> let val = calc key
-               in modify (setter val) >> return val
-
-writeThrough' :: Lens' CompilerState val -> (key -> val) -> key -> State CompilerState val
-writeThrough' lens calc key = do
-  maybeVal <- gets (^. lens)
-  case maybeVal of
-    Just val -> return val
-    Nothing -> let val = calc key
-               in over lens (Map.insert key val)
+    Just val -> return (Right val)
+    Nothing -> do
+      res <- calc key
+      case res of
+        Right val -> modify (over l (Map.insert key val)) >> return (Right val)
+        Left err  -> return (Left err)

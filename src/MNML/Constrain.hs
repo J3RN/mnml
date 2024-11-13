@@ -12,7 +12,8 @@ import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe)
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
-import           MNML                (CompilerState (..))
+import           MNML                (CompilerState (..), moduleDefCache,
+                                      valueDefCache, writeThrough)
 import qualified MNML.AST            as AST
 import qualified MNML.Parse          as P
 import qualified MNML.Type           as T
@@ -297,6 +298,8 @@ valueConstraints' modu valName = do
       modify (\s -> s {_module = modu, _pendingTypes = []})
       res <- constrain expr
       pTypes <- gets _pendingTypes
+      -- TODO: WARNING: This is a trick for circular references but *only works in the same module*
+      modify (\s -> s {_bindings = Map.insert valName (fst res) (_bindings s)})
       foldM foldPendingType res pTypes
     Left err -> giveUp err valName
   where
@@ -306,11 +309,12 @@ valueConstraints' modu valName = do
       return (t, T.CEqual nodeId t' t'' : cs' ++ cs)
 
 valueDef :: Text -> Text -> State CompilerState (Either ConstraintError AST.Expr)
-valueDef modu valName = do
-  mDef <- moduleDef modu
-  return (mDef >>= findDef valName)
+valueDef modu valName = writeThrough valueDefCache findValDef (modu, valName)
   where
-    findDef name decls =
+    findValDef (m, v) = do
+      mDef <- moduleDef m
+      return (mDef >>= findDef v)
+    findDef name defs =
       maybe
         (Left (UnknownVal name))
         Right
@@ -319,10 +323,8 @@ valueDef modu valName = do
                 (AST.ValueDecl n expr _) | n == name -> Just expr
                 _ -> Nothing
             )
-            decls
+            defs
         )
 
--- TODO: Cache module definitions here
 moduleDef :: Text -> State CompilerState (Either ConstraintError [AST.Declaration])
-moduleDef modu = do
-  first ParseError <$> P.parse modu
+moduleDef = writeThrough moduleDefCache ((first ParseError <$>) <$> P.parse)

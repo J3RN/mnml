@@ -58,7 +58,7 @@ spec =
         res `shouldBe` Right (T.Fun [T.Var "ret" [T.Numeric] 2, T.Var "ret" [T.Numeric] 2] (T.Var "ret" [T.Numeric] 2))
 
       it "unifies value reference" $ do
-        let (res, _cs) = unify' (Text.unlines ["main = () => { foo }", "foo = 5"] )
+        let (res, _cs) = unify' (Text.unlines ["main = () => { foo }", "foo = 5"])
         res `shouldBe` Right (T.Fun [] (T.Var "num" [T.Numeric] 2))
 
     describe "lists" $ do
@@ -152,17 +152,21 @@ spec =
 
     describe "application" $ do
       it "unifies value reference invocation" $ do
-        let (res, _cs) = unify' (Text.unlines ["main = foo(6.1)", "foo = (x) => {x * 5}"] )
+        let (res, _cs) = unify' (Text.unlines ["main = foo(6.1)", "foo = (x) => {x * 5}"])
         res `shouldBe` Right T.Float
 
       it "allows functions with type constraints to stay generic" $ do
-        let (res, _cs) = unify' (Text.unlines ["main = () => { {float: foo(6.1), numeric: foo(5)} }", "foo = (x) => {x * 5}"] )
+        let (res, _cs) = unify' (Text.unlines ["main = () => { {float: foo(6.1), numeric: foo(5)} }", "foo = (x) => {x * 5}"])
         res `shouldBe` Right (T.Fun [] (T.Record [("float", T.Float), ("numeric", T.Var "num" [T.Numeric] 3)]))
 
       it "allows functions with partial records to stay generic" $ do
-        let (res, _cs) = unify' (Text.unlines ["main = () => { {string: foo({abc: \"def\", name: \"foo\"}), float: foo({baz: 2, name: 5.1})} }", "foo = (x) => {", "case x of", "{name: a} -> a", "}"] )
+        let (res, _cs) = unify' (Text.unlines ["main = () => { {string: foo({abc: \"def\", name: \"foo\"}), float: foo({baz: 2, name: 5.1})} }", "foo = (x) => {", "case x of", "{name: a} -> a", "}"])
         res `shouldBe` Right (T.Fun [] (T.Record [("string", T.String), ("float", T.Float)]))
 
-      -- it "unifies circular reference" $ do
-      --   let (res, _cs) = unify' (Text.unlines ["main = () => { foo() }", "foo = () => { main() }"])
-      --   res `shouldBe` Right (T.Fun [] (T.Var "ret" [] 0))
+      it "unifies trivial circular reference" $ do
+        let (res, _cs) = unify' (Text.unlines ["main = () => { foo() }", "foo = () => { main() }"])
+        res `shouldBe` Right (T.Fun [] (T.Var "ret" [] 1))
+
+      it "unifies practical circular reference" $ do
+        let (res, _cs) = unify' (Text.unlines ["Bool = True | False", "main = (x) => {", "case x of", "0 -> True", "y -> odd(y - 1)", "}", "odd = (x) => {", "case x of", "1 -> True", "y -> main(y - 1)", "}"])
+        res `shouldBe` Right (T.Fun [T.Var "num" [T.Numeric] 1] (T.AlgebraicType "Bool"))
