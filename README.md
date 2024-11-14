@@ -1,6 +1,6 @@
 # mnml
 
-Pronounced "minimal". A small functional language inspired by [Elm], [JavaScript], [Grain], [Gleam], and [Haskell], see [Differences](#differences-to-other-languages).
+Pronounced "minimal". A small functional language with strong, static typing, type inference, immutable data structures, and records.
 
 ```mnml
 main = () => {
@@ -8,7 +8,14 @@ main = () => {
 }
 ```
 
-mnml is strongly, statically typed, featuring immutable data structures and records.
+mnml is inspired by [Elm], [JavaScript], [Grain], [Gleam], and [Haskell], see [Differences](#differences-to-other-languages).
+
+## Terminology for mnml
+
+mnml has three important terms:
+1. Value: A value is something like a number or a person's name. `5` is a value. `"Hello!"` is a value.  Some values are more complex, like a lists and records—these are discussed below.
+2. Types: Types describe values; specifically, a type specifies a set[^1] of values.  For instance, we would say the type of `5` is `Int`.  `2` is also an `Int`.  However, `"Hello!"` is not an `Int`, it is a member of a different type called `String`.
+3. Definitions: Definitions assign a name to either data or a type.  `five = 5` is a value definition (also sometimes called a "binding"; the name "five" is "bound" to the value `5`).  `Bool = True | False` is a type definition (`Bool` describes the set of two values, `True` and `False`).  When a value is associated to a name, the name may be used in place of the value.  e.g. After `five = 5` you can write `five + 6` and this will evaluate to `11`.
 
 ## Modules
 
@@ -16,7 +23,11 @@ Every file ending in `.mnml` is considered its own module. The module's name is 
 
 A module is a series of definitions, namely:
 
-- Type definitions
+- Value definitions
+  ```mnml
+  five = 5
+  ```
+- Type definitions (see [algebraic data types](#algebraic-data-types), below)
   ```mnml
   Maybe(a) = Some(a) | Nothing
   ```
@@ -24,29 +35,31 @@ A module is a series of definitions, namely:
   ```mnml
   alias { name: String, age: Int } as User
   ```
-- Value definitions
-  ```mnml
-  five = 5
-  ```
 
-## Functions
+## Primitives
 
-Many functional languages have first-class functions, but mnml takes this to it's logical conclusion by having function definitions simply be value definitions where the value is a lambda:
+mnml has four primitive types of values:
+- `Int` (short for "integer") (e.g. `1`)
+- `Float` (short for "floating point number"") (e.g. `3.14`)
+- `Char` (short for "character") (e.g. `'a'`)
+- `String` (e.g. `"Hello!"`)
 
+Chars must be wrapped in *single quotes* (`'...'`) and Strings must be wrapped in *double quotes* (`"..."`).
+
+## Lists
+
+A list is what it sounds like; it's an ordered set of values.  Those values must all be of the same type, for instance:
 ```mnml
-main = () => {
-  println("Hello, World!")
-}
+[1,2,3,5,7]
 ```
-
-Of course, functions can remain unnamed ("anonymous") as needed:
+The type for this list is written:
 ```mnml
-map((x) => { x + 1 }, [1, 2, 3])
+[Int]
 ```
 
 ## Records
 
-mnml borrows Elm's records: A record is a mapping of names to values.  This concept is similar to "maps" (Haskell) or "hashes" (Ruby), but those data structures allow for an arbitrary key type and the keys for records have no type; they are simply labels for the data.
+A record is a mapping of names to values.
 
 A record value looks like this:
 ```mnml
@@ -57,7 +70,77 @@ That record's type is written:
 { name: String, age: Int }
 ```
 
-mnml's records are also similar to tuples in other languages (Haskell), but with labels for the tuple elements.  mnml does not have tuples (ATOW), insisting on the use of records instead.
+This concept is similar to "maps" (Haskell) or "hashes" (Ruby), but those data structures allow for an arbitrary key type.  The keys for records have no type; they are simply labels for the data.  mnml's records are also similar to tuples in other languages (Haskell, Python), but with labels for the tuple elements.  mnml does not have tuples (at least, not yet), insisting on the use of records instead.
+
+## Functions
+
+A function is a kind of value that expresses a computation.  For instance, this function expresses the addition of `5` and `6`:
+```mnml
+() => { 5 + 6 }
+```
+
+To evaluate the computation, the function must be *invoked*, like so:
+```mnml
+() => { 5 + 6 }()
+```
+This expression evaluates to `11`.
+
+This kind of function is, of course, of limited utility.  Functions become far more useful when they have *parameters*, or values that are passed in.  For instance, this function expresses the computation of incrementing the parameter `x`:
+```mnml
+(x) => { x + 1 }
+```
+
+It can be invoked like so:
+```
+(x) => { x + 1 }(5)
+```
+This expression evaluates the function with `x` bound to `5` and evaluates to `6`.
+
+Functions can be given names just like any other data:
+
+```mnml
+increment = (x) => { x + 1 }
+increment(5)
+```
+This expression evaluates to `6`, as above.
+
+## Algebraic Data Types
+
+mnml has algebraic data types, similar to Haskell, Elm, Rust, and other languages.
+
+What this means is that you can define your own data structure that is a *product* of other types, meaning that it contains multiple types:
+```mnml
+Pair(a, b) = P(a, b)
+```
+Here, `Pair(a, b)` is a *type template*.  A type made from this template replaces the *type variables*, `a` and `b`, with types, e.g. `Pair(String, Int)`.  This definition specifies a single *constructor*, `P`, a function invoked to make a value of this type, e.g. `P("Hello", 5)`.
+
+An algebraic data type can also be a *sum* of other types, meaning that it either contains one type or another:
+```mnml
+Result(a, b) = Success(a) | Failure(b)
+```
+Here, `Result(a, b)` is the type template, and `Success(a)` and `Failure(b)` are constructors of values of that type.  For instance, the type `Result(Int, String)` contains the values `Success(42)` and `Failure("Something went wrong")`.
+
+An algebraic data type can also be a mix of both sums and products, for instance:
+```mnml
+Example(a, b, c) = Pair(a, b) | Singleton(c)
+```
+
+Or neither:
+```mnml
+Nil = Nil
+```
+
+The type `Nil` has exactly one value, `Nil`.
+
+A truly minimal approach would be to have `Nil` be a constructor that needs to be invoked to create values (i.e. `Nil` is a constructor and `Nil()` is a value), but this deviates from other similar languages and creates syntactic noise.
+
+The syntax used here is a slight modification of the ML syntax used by Haskell, Elm, and others.  I personally find this confusing, and might move to something closer to Rust's syntax:
+```rust
+enum Result<T, E> {
+	Ok(T),
+	Err(E),
+}
+```
 
 ## Type Aliases
 
@@ -68,50 +151,28 @@ alias { name: String, age: Int } as User
 
 With this alias defined in your code, instead of needing to write `{ name: String, age: Int }` in multiple places, you can just write `User` instead.  It's nice for typing and aids in refactoring.
 
-## Algebraic Data Types
-
-mnml has algebraic data types, similar to Haskell, Elm, Rust, and other languages.  What this means is that you can define your own data structure that is a *product* of other types...
+You can create aliases of other types too, if you want.  For instance:
 ```mnml
-Pair(a, b) = Pair(a, b)
-```
-a *sum* of other types...
-```mnml
-Bool = True | False
-```
-or both
-```mnml
-Result(a, b) = Success(a) | Failure(b)
-```
-
-The way to read this is that the left hand side of the `=` is the type, (e.g. `Bool` is the type) and the right hand side is one or more constructors or values that are of the type, separated by `|` (e.g. `True` and `False` are `Bool` values, `Success` is a constructor of type `Result(a, b)`).  A constructor is a function that produces a value (e.g. `Success` is a constructor, `Success(1)` is a value).
-
-A truly minimal approach would be to have `True` and `False` be constructors that needed to be invoked to create values (i.e. `True` being a constructor (a function) and `True()` being the value), but this deviates from other languages and creates syntactic noise.
-
-The syntax used here is a slight modification of the ML syntax used by Haskell, Elm, and others.  I personally find this confusing, and might move to something closer to Rust's syntax:
-```rust
-enum Result<T, E> {
-	Ok(T),
-	Err(E),
-}
+alias Pair(Int, Int) as IntPair
 ```
 
 ## Control Flow
 
 At time of writing, mnml's only control flow construct is `case`.
 
-The `case` expression is a mapping of "patterns" to expressions that should be executed if the pattern matches.
+The `case` expression is a mapping of *patterns* to expressions that should be executed if the pattern matches.
 
 ```mnml
 case foo of
-  [{name: firstName}, _] -> firstName
-  []                     -> "N/A"
+  [{name: firstName}, ...] -> firstName
+  []                       -> "N/A"
 ```
 
-In the example above, `foo` must be a list of records containing at least a `name` key.  If the list is non-empty, the first pattern (`[{name: firstName}, _]`) matches, the value associated to the `name` key (bound to a new variable `firstName`) is returned.
+In the example above, `foo` must be a list of records containing at least a `name` key associated to a String.  We know the value must be a String because `case` statements must have a consistent return type, and the second branch returns the String `"N/A"`.  If the list is non-empty, the first pattern (`[{name: firstName}, ...]`) matches, the value associated to the `name` key (bound to a new variable `firstName`) is returned.
 
 If the list is empty, the second pattern (`[]`) matches, and `"N/A"` is returned.
 
-`case` expressions *must* be "covering", which means that a pattern must always match.  `_` is a special pattern that matches anything, and so can be used as an "if nothing above matches" pattern in a `case` expression.
+`case` expressions *must* be "covering", which means that a pattern must always match.  `_` is a special pattern that matches anything, and so can be used as an "if no previous pattern matches" pattern in a `case` expression, e.g.:
 
 ```mnml
 case answer of
