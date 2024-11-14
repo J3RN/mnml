@@ -39,7 +39,6 @@ data ConstrainEnv
   = ConstrainEnv
       { _bindings     :: Bindings
       , _module       :: Text
-      , _nextVarId    :: T.VarId
       , _pendingTypes :: [PendingType]
       , _errors       :: [ConstraintError]
       }
@@ -51,7 +50,6 @@ initialEnv modu =
   ConstrainEnv
     { _bindings = Map.empty,
       _module = modu,
-      _nextVarId = 0,
       _pendingTypes = [],
       _errors = []
     }
@@ -174,19 +172,15 @@ constrainPattern (AST.PList elemPats nodeId) = do
   return (elemType, retCons ++ elemSubCons)
 constrainPattern (AST.PLiteral lit _) = (,[]) <$> litType lit
 
+-- Bad name, again
+varIdPlusPlus :: Constrain T.VarId
+varIdPlusPlus = lift (state (\s -> (_nextTypeId s, s {_nextTypeId = _nextTypeId s + 1})))
+
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
-freshTypeVar name traits = state (freshTypeVar' name traits)
-  where
-    freshTypeVar' n ts s =
-      let newTVId = _nextVarId s
-       in (T.Var n ts newTVId, s {_nextVarId = newTVId + 1})
+freshTypeVar name traits = T.Var name traits <$> varIdPlusPlus
 
 freshPartialRecord :: [T.FieldSpec] -> Constrain T.Type
-freshPartialRecord fields = state (freshPartialRecord' fields)
-  where
-    freshPartialRecord' fs s =
-      let newVarId = _nextVarId s
-       in (T.PartialRecord fs newVarId, s {_nextVarId = newVarId + 1})
+freshPartialRecord fields = T.PartialRecord fields <$> varIdPlusPlus
 
 -- Runs a function within its own scope (inheriting the existing scope)
 withNewScope :: Constrain a -> Constrain a

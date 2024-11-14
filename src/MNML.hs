@@ -4,6 +4,8 @@ module MNML
     , SourceSpan (..)
     , emptyState
     , moduleDefCache
+    , nextNodeId
+    , nextTypeId
     , stateModules
     , stateSpans
     , stateTypes
@@ -49,6 +51,8 @@ data CompilerState
       { _spans                 :: Spans
       , _modules               :: Modules
       , _types                 :: Types
+      , _nextNodeId            :: AST.NodeId
+      , _nextTypeId            :: T.VarId
       , _moduleDefCache        :: ModuleDefCache
       , _valueDefCache         :: ValueDefCache
       , _valueConstraintsCache :: ValueConstraintsCache
@@ -61,6 +65,8 @@ emptyState =
     { _spans = Map.empty,
       _modules = Map.empty,
       _types = Map.empty,
+      _nextNodeId = 0,
+      _nextTypeId = 0,
       _moduleDefCache = Map.empty,
       _valueDefCache = Map.empty,
       _valueConstraintsCache = Map.empty
@@ -76,6 +82,12 @@ stateModules = lens _modules (\cs mods -> cs {_modules = mods})
 
 stateTypes :: Lens' CompilerState Types
 stateTypes = lens _types (\cs types -> cs {_types = types})
+
+nextNodeId :: Lens' CompilerState AST.NodeId
+nextNodeId = lens _nextNodeId (\cs ni -> cs {_nextNodeId = ni})
+
+nextTypeId :: Lens' CompilerState T.VarId
+nextTypeId = lens _nextTypeId (\cs vi -> cs {_nextTypeId = vi})
 
 moduleDefCache :: Lens' CompilerState ModuleDefCache
 moduleDefCache = lens _moduleDefCache (\cs mdc -> cs {_moduleDefCache = mdc})

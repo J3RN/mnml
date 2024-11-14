@@ -11,7 +11,7 @@ import           Data.Text           (Text)
 import qualified Data.Text           as Text
 import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState (..), SourceSpan (..),
-                                      stateSpans)
+                                      nextNodeId, stateSpans)
 import           MNML.AST            (Declaration (..), Expr (..), Literal (..),
                                       NodeId, Operator (..), Pattern (..),
                                       Type (..))
@@ -30,18 +30,22 @@ newtype ParseEnv
 nextId :: Lens' ParseEnv NodeId
 nextId = lens _nextId (\pe ni -> pe {_nextId = ni})
 
-initialEnv :: ParseEnv
-initialEnv = ParseEnv {_nextId = 0}
-
 type Parser = ParsecT Text ParseEnv (State CompilerState)
 
 -- Client API
 parse :: Text -> State CompilerState (Either ParseError [Declaration])
 parse modu = do
   moduleTextResult <- gets ((Map.!? modu) . _modules)
+  initialNodeId <- gets _nextNodeId
+  let initialEnv = (ParseEnv {_nextId = initialNodeId})
   case moduleTextResult of
-    Just rawCode -> runParserT MNML.Parse.mod initialEnv (Text.unpack (modu <> ".mnml")) rawCode
+    Just rawCode -> runParserT (MNML.Parse.mod <* updateGlobalNextId) initialEnv (Text.unpack (modu <> ".mnml")) rawCode
     Nothing -> runParserT (fail (concat ["File '", Text.unpack modu <> ".mnml'", " not loaded"])) initialEnv (Text.unpack (modu <> ".mnml")) Text.empty
+  where
+    updateGlobalNextId :: Parser ()
+    updateGlobalNextId = do
+      ParseEnv {_nextId = nodeId} <- getState
+      lift (modify (over nextNodeId (const nodeId)))
 
 -- Helpers
 
