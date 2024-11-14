@@ -5,7 +5,7 @@ module MNML.Constrain
 
 import           Control.Monad       (foldM)
 import           Control.Monad.State (State, StateT, gets, lift, modify,
-                                      runStateT, state)
+                                      runStateT)
 import           Data.Bifunctor      (first)
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
@@ -13,7 +13,8 @@ import           Data.Maybe          (listToMaybe, mapMaybe)
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
 import           MNML                (CompilerState (..), moduleDefCache,
-                                      valueDefCache, writeThrough)
+                                      valueDefCache, varIdPlusPlus,
+                                      writeThrough)
 import qualified MNML.AST            as AST
 import qualified MNML.Parse          as P
 import qualified MNML.Type           as T
@@ -171,10 +172,6 @@ constrainPattern (AST.PList elemPats nodeId) = do
       elemSubCons = concatMap snd elemCons
   return (elemType, retCons ++ elemSubCons)
 constrainPattern (AST.PLiteral lit _) = (,[]) <$> litType lit
-
--- Bad name, again
-varIdPlusPlus :: Constrain T.VarId
-varIdPlusPlus = lift (state (\s -> (_nextTypeId s, s {_nextTypeId = _nextTypeId s + 1})))
 
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
 freshTypeVar name traits = T.Var name traits <$> varIdPlusPlus

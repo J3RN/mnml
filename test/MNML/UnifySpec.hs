@@ -75,8 +75,8 @@ spec =
         res `shouldBe` Right (T.List T.Float)
 
       it "does not unify inconsistent list" $ do
-        let (res, _cs) = unify' "main = [1, \"Hello\"]"
-        res `shouldBe` Left [UnificationError (T.Var "num" [T.Numeric] 0) T.String 1]
+        let (res, _cs) = unify' "main = [1.0, \"Hello\"]"
+        res `shouldBe` Left [UnificationError T.Float T.String 1]
 
     describe "records" $ do
       it "unifies singleton record" $ do
@@ -115,19 +115,19 @@ spec =
 
       it "unifies branches with different literals for the same record field" $ do
         let (res, _cs) = unify' (Text.unlines ["main = (foo) => {", "case foo of", "{foo: \"bar\"} -> 1", "{foo: \"baz\"} -> 2", "}"])
-        res `shouldBe` Right (T.Fun [T.PartialRecord [("foo", T.String)] 2] (T.Var "num" [T.Numeric] 3))
+        res `shouldBe` Right (T.Fun [T.PartialRecord [("foo", T.String)] 9] (T.Var "num" [T.Numeric] 3))
 
       it "unifies disjoint record patterns" $ do
         let (res, _cs) = unify' (Text.unlines ["main = (x) => {", "case x of", "{foo: \"bar\"} -> 1", "{bar: 1.0} -> 2", "}"])
-        res `shouldBe` Right (T.Fun [T.PartialRecord [("foo", T.String), ("bar", T.Float)] 2] (T.Var "num" [T.Numeric] 3))
+        res `shouldBe` Right (T.Fun [T.PartialRecord [("foo", T.String), ("bar", T.Float)] 9] (T.Var "num" [T.Numeric] 3))
 
       it "does not unify inconsistent record patterns" $ do
         let (res, _cs) = unify' (Text.unlines ["main = (foo) => {", "case foo of", "{foo: \"bar\"} -> 1", "{foo: 1.0} -> 2", "}"])
         res `shouldBe` Left [UnificationError T.String T.Float 9]
 
       it "does not unify non-matching patterns" $ do
-        let (res, _cs) = unify' (Text.unlines ["main = (foo) => {", "case foo of", "3 -> \"Fizz\"", "'5' -> \"Buzz\"", "}"])
-        res `shouldBe` Left [UnificationError (T.Var "num" [T.Numeric] 1) T.Char 2]
+        let (res, _cs) = unify' (Text.unlines ["main = (foo) => {", "case foo of", "3.0 -> \"Fizz\"", "'5' -> \"Buzz\"", "}"])
+        res `shouldBe` Left [UnificationError T.Float T.Char 2]
 
       it "does not unify non-matching return types" $ do
         let (res, _cs) = unify' (Text.unlines ["main = (foo) => {", "case foo of", "3 -> \"Fizz\"", "5 -> 'B'", "}"])

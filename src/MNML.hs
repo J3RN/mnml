@@ -11,10 +11,11 @@ module MNML
     , stateTypes
     , valueConstraintsCache
     , valueDefCache
+    , varIdPlusPlus
     , writeThrough
     ) where
 
-import           Control.Monad.State
+import           Control.Monad.State (State, StateT, gets, lift, modify, state)
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Data.Text           (Text)
@@ -97,6 +98,10 @@ valueDefCache = lens _valueDefCache (\cs vdc -> cs {_valueDefCache = vdc})
 
 valueConstraintsCache :: Lens' CompilerState ValueConstraintsCache
 valueConstraintsCache = lens _valueConstraintsCache (\cs vcc -> cs {_valueConstraintsCache = vcc})
+
+-- Not a great name, but
+varIdPlusPlus :: StateT m (State CompilerState) T.VarId
+varIdPlusPlus = lift (state (\s -> (_nextTypeId s, s {_nextTypeId = _nextTypeId s + 1})))
 
 -- Cache ops
 

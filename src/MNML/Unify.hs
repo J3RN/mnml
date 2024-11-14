@@ -3,37 +3,31 @@ module MNML.Unify
     , valueType
     ) where
 
-import           Control.Monad.State (State, modify, runState)
+import           Control.Monad.State (State, StateT, modify, runStateT)
 import           Data.Bifunctor      (second)
 import           Data.Function       (on)
 import qualified Data.List           as List
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
-import           Data.Maybe          (fromMaybe, isJust)
+import           Data.Maybe          (fromMaybe)
 import           Data.Text           (Text)
-import           MNML                (CompilerState (..))
+import           MNML                (CompilerState (..), varIdPlusPlus)
 import qualified MNML.AST            as AST
 import qualified MNML.Constrain      as C
-import qualified MNML.Parse          as P
 import qualified MNML.Type           as T
 
 data UnificationError
-  = UnknownVar AST.NodeId
-  | UnknownVal Text
-  | UnknownConstructor Text
-  | UnknownType Text -- AST.NodeId
-  | ArgumentLengthMismatch AST.NodeId
+  = ArgumentLengthMismatch AST.NodeId
   | UnificationError T.Type T.Type AST.NodeId
   | OccursError T.Type T.Type AST.NodeId
   | ExpectedTraits T.Type [T.Trait] AST.NodeId
   | ExpectedFields T.Type [T.FieldSpec] AST.NodeId
   | ConstraintError C.ConstraintError
-  | ParseError P.ParseError
   deriving (Eq, Show)
 
 type Subst = Map T.Type T.Type
 
-type Constrain = State Subst
+type Constrain = StateT Subst (State CompilerState)
 
 -- Unify a set of constraints
 
@@ -55,36 +49,31 @@ unify ((T.CEqual nodeId rec1@(T.Record fieldSpec1) rec2@(T.Record fieldSpec2)) :
     then unify (commonFieldConstraints nodeId fieldSpec1 fieldSpec2 ++ cs)
     else return (Just (UnificationError rec1 rec2 nodeId))
 -- Eliminate
--- We don't want to swap incompatible vars back and forth forever, so we try both sides
--- and fail if both sides are incompatible vars
 unify ((T.CEqual nodeId var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2)) : cs)
-  -- If they're the same, choose the var with the lowest ID
-  | List.sort traits1 == List.sort traits2 =
-      if id1 < id2
+  -- Try to reuse a type var if possible
+  | ((==) `on` List.sort) traits1 traits2 =
+      if id1 <= id2
         then bind' nodeId var2 var1 cs
         else bind' nodeId var1 var2 cs
-  | (var2 `implements`) `all` traits1 = bind' nodeId var1 var2 cs
   | (var1 `implements`) `all` traits2 = bind' nodeId var2 var1 cs
-  | otherwise = return (Just (ExpectedTraits var2 traits1 nodeId))
-unify ((T.CEqual nodeId var@(T.Var _ traits _) t) : cs) | (t `implements`) `all` traits = bind' nodeId var t cs
-unify ((T.CEqual nodeId pRec1@(T.PartialRecord fieldSpec1 id1) pRec2@(T.PartialRecord fieldSpec2 _)) : cs) =
+  | (var2 `implements`) `all` traits1 = bind' nodeId var1 var2 cs
+  | otherwise = do
+      newVar <- T.Var "x" (traits1 `List.union` traits2) <$> varIdPlusPlus
+      bind1Res <- bind nodeId var1 newVar cs
+      bindRes <- either (return . Left) (bind nodeId var2 newVar) bind1Res
+      either (return . Just) unify bindRes
+unify ((T.CEqual nodeId var@(T.Var _ traits _) t) : cs) =
+  if (t `implements`) `all` traits
+    then bind' nodeId var t cs
+    else return (Just (ExpectedTraits t traits nodeId))
+unify ((T.CEqual nodeId pRec1@(T.PartialRecord fieldSpec1 _) pRec2@(T.PartialRecord fieldSpec2 _)) : cs) =
   let commonFieldCs = commonFieldConstraints nodeId fieldSpec1 fieldSpec2
       supersetFieldSpec = fieldUnion fieldSpec1 fieldSpec2
-   in if supersetFieldSpec == fieldSpec1
-        then bind' nodeId pRec2 pRec1 (commonFieldCs ++ cs)
-        else
-          if supersetFieldSpec == fieldSpec2
-            then bind' nodeId pRec1 pRec2 (commonFieldCs ++ cs)
-            else -- I can get away with stealing pRec1's ID for the superset because this record has different fields
-            -- Hopefully.
-
-              let supersetPartialRecord = T.PartialRecord supersetFieldSpec id1
-               in do
-                    pRec1BindRes <- bind nodeId pRec1 supersetPartialRecord cs
-                    bindRes <- either (return . Left) (bind nodeId pRec2 supersetPartialRecord) pRec1BindRes
-                    case bindRes of
-                      Left err  -> return (Just err)
-                      Right cs' -> unify (cs' ++ commonFieldCs)
+   in do
+        supersetPartialRecord <- T.PartialRecord supersetFieldSpec <$> varIdPlusPlus
+        pRec1BindRes <- bind nodeId pRec1 supersetPartialRecord cs
+        bindRes <- either (return . Left) (bind nodeId pRec2 supersetPartialRecord) pRec1BindRes
+        either (return . Just) (unify . (++ commonFieldCs)) bindRes
   where
     -- Combine the field specs.  The new, "super" field spec will use the type
     -- in fs1, if it exists, or otherwise the field spec in fs2.
@@ -94,15 +83,14 @@ unify ((T.CEqual nodeId (T.PartialRecord fieldSpec1 _) rec@(T.Record fieldSpec2)
   if fieldSpec1 `isFieldSubset` fieldSpec2
     then unify (commonFieldConstraints nodeId fieldSpec1 fieldSpec2 ++ cs)
     else return (Just (ExpectedFields rec fieldSpec1 nodeId))
+  where
+    isFieldSubset :: [T.FieldSpec] -> [T.FieldSpec] -> Bool
+    isFieldSubset = List.isSubsequenceOf `on` (List.sort . map fst)
 -- Swap
 unify ((T.CEqual nodeId t var@(T.Var _ _ _)) : cs) = unify (T.CEqual nodeId var t : cs)
 unify ((T.CEqual nodeId t pRec@(T.PartialRecord _ _)) : cs) = unify (T.CEqual nodeId pRec t : cs)
 -- Conflict
 unify ((T.CEqual nodeId t1 t2) : _) = return (Just (UnificationError t1 t2 nodeId))
-
-isFieldSubset :: [T.FieldSpec] -> [T.FieldSpec] -> Bool
-isFieldSubset fieldSpec1 fieldSpec2 =
-  all (isJust . flip lookup fieldSpec2 . fst) fieldSpec1
 
 commonFieldConstraints :: AST.NodeId -> [T.FieldSpec] -> [T.FieldSpec] -> [T.Constraint]
 commonFieldConstraints nodeId fieldSpec1 fieldSpec2 =
@@ -138,11 +126,7 @@ bind nodeId var t cs =
     eliminate _ _ substType = substType
 
 bind' :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> Constrain (Maybe UnificationError)
-bind' nodeId var t cs = do
-  bindConstraintRes <- bind nodeId var t cs
-  case bindConstraintRes of
-    Left err  -> return (Just err)
-    Right cs' -> unify cs'
+bind' nodeId var t cs = bind nodeId var t cs >>= either (return . Just) unify
 
 occursIn :: T.Type -> T.Type -> Bool
 occursIn _ T.Int = False
@@ -177,8 +161,9 @@ valueType :: Text -> Text -> State CompilerState (Either [UnificationError] T.Ty
 valueType modu valName = do
   constraintsRes <- C.valueConstraints modu valName
   case constraintsRes of
-    Right (inferType, constraints) ->
-      case runState (unify constraints) Map.empty of
+    Right (inferType, constraints) -> do
+      res <- runStateT (unify constraints) Map.empty
+      case res of
         (Just err, _) -> return (Left [err])
         (Nothing, subst) -> return (Right (fromMaybe inferType (subst !? inferType)))
     Left constrainErrs -> return (Left (map ConstraintError constrainErrs))
