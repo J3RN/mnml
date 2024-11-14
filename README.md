@@ -276,6 +276,8 @@ Originally I didn't think I would include an `if` in mnml because it already has
     ```
     `otherwise` is a somewhat peculiar choice of keyword, since it is so long, but when describing code aloud I find that I tend to say "if ... then ... *otherwise* ..." and so I'm inclined to use it.
 
+[^1]: Technically type theory and set theory are distinct.  Specifically, in type theory, a value may only belong to exactly one type, whereas in set theory a value may belong to many sets.  Consider: 1.0 only belongs to the type `Float`, it does not belong to any other type like `Int`, `String`, etc.
+
 <!-- References -->
 [Elm]: https://elm-lang.org
 [JavaScript]: https://developer.mozilla.org/en-US/docs/Web/JavaScript
