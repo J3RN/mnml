@@ -49,10 +49,10 @@ type Constrain a = StateT ConstrainEnv (State CompilerState) a
 initialEnv :: Text -> ConstrainEnv
 initialEnv modu =
   ConstrainEnv
-    { _bindings = Map.empty,
-      _module = modu,
-      _pendingTypes = [],
-      _errors = []
+    { _bindings = Map.empty
+    , _module = modu
+    , _pendingTypes = []
+    , _errors = []
     }
 
 bindings :: Lens' ConstrainEnv Bindings

@@ -39,8 +39,18 @@ parse modu = do
   initialNodeId <- gets _nextNodeId
   let initialEnv = (ParseEnv {_nextId = initialNodeId})
   case moduleTextResult of
-    Just rawCode -> runParserT (MNML.Parse.mod <* updateGlobalNextId) initialEnv (Text.unpack (modu <> ".mnml")) rawCode
-    Nothing -> runParserT (fail (concat ["File '", Text.unpack modu <> ".mnml'", " not loaded"])) initialEnv (Text.unpack (modu <> ".mnml")) Text.empty
+    Just rawCode ->
+      runParserT
+        (MNML.Parse.mod <* updateGlobalNextId)
+        initialEnv
+        (Text.unpack (modu <> ".mnml"))
+        rawCode
+    Nothing ->
+      runParserT
+        (fail (concat ["File '", Text.unpack modu <> ".mnml'", " not loaded"]))
+        initialEnv
+        (Text.unpack (modu <> ".mnml"))
+        Text.empty
   where
     updateGlobalNextId :: Parser ()
     updateGlobalNextId = do
@@ -310,17 +320,29 @@ fieldPattern = do
 mnmlDef :: Tok.GenLanguageDef Text ParseEnv (State CompilerState)
 mnmlDef =
   Tok.LanguageDef
-    { Tok.caseSensitive = True,
-      Tok.opStart = Tok.opLetter mnmlDef,
-      Tok.opLetter = oneOf "+-*/|>=",
-      Tok.commentStart = "",
-      Tok.commentEnd = "",
-      Tok.commentLine = "",
-      Tok.nestedComments = True,
-      Tok.identStart = lower,
-      Tok.identLetter = alphaNum <|> char '_',
-      Tok.reservedOpNames = ["+", "-", "*", "/", "|>", "=", "==", "|"],
-      Tok.reservedNames = ["alias", "as", "case", "of", "not", "and", "or", "Int", "Float", "Char", "String"]
+    { Tok.caseSensitive = True
+    , Tok.opStart = Tok.opLetter mnmlDef
+    , Tok.opLetter = oneOf "+-*/|>="
+    , Tok.commentStart = ""
+    , Tok.commentEnd = ""
+    , Tok.commentLine = ""
+    , Tok.nestedComments = True
+    , Tok.identStart = lower
+    , Tok.identLetter = alphaNum <|> char '_'
+    , Tok.reservedOpNames = ["+", "-", "*", "/", "|>", "=", "==", "|"]
+    , Tok.reservedNames =
+        [ "alias"
+        , "as"
+        , "case"
+        , "of"
+        , "not"
+        , "and"
+        , "or"
+        , "Int"
+        , "Float"
+        , "Char"
+        , "String"
+        ]
     }
 
 lexer :: Tok.GenTokenParser Text ParseEnv (State CompilerState)

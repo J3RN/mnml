@@ -63,14 +63,14 @@ data CompilerState
 emptyState :: CompilerState
 emptyState =
   CompilerState
-    { _spans = Map.empty,
-      _modules = Map.empty,
-      _types = Map.empty,
-      _nextNodeId = 0,
-      _nextTypeId = 0,
-      _moduleDefCache = Map.empty,
-      _valueDefCache = Map.empty,
-      _valueConstraintsCache = Map.empty
+    { _spans = Map.empty
+    , _modules = Map.empty
+    , _types = Map.empty
+    , _nextNodeId = 0
+    , _nextTypeId = 0
+    , _moduleDefCache = Map.empty
+    , _valueDefCache = Map.empty
+    , _valueConstraintsCache = Map.empty
     }
 
 -- Assorted lenses
