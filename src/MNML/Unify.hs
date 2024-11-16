@@ -4,7 +4,6 @@ module MNML.Unify
     ) where
 
 import           Control.Monad.State (State, StateT, modify, runStateT)
-import           Data.Bifunctor      (second)
 import           Data.Function       (on)
 import qualified Data.List           as List
 import           Data.Map            (Map, (!?))
@@ -21,7 +20,7 @@ data UnificationError
   | UnificationError T.Type T.Type AST.NodeId
   | OccursError T.Type T.Type AST.NodeId
   | ExpectedTraits T.Type [T.Trait] AST.NodeId
-  | ExpectedFields T.Type [T.FieldSpec] AST.NodeId
+  | ExpectedFields T.Type T.FieldSpec AST.NodeId
   | ConstraintError C.ConstraintError
   deriving (Eq, Show)
 
@@ -45,13 +44,13 @@ unify ((T.CEqual nodeId (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2)) :
           argTypeCons = zipWith (T.CEqual nodeId) argTypes1 argTypes2
        in unify (retCon : (argTypeCons ++ cs))
 unify ((T.CEqual nodeId rec1@(T.Record fieldSpec1) rec2@(T.Record fieldSpec2)) : cs) =
-  if List.sort (map fst fieldSpec1) == List.sort (map fst fieldSpec2)
+  if List.sort (Map.keys fieldSpec1) == List.sort (Map.keys fieldSpec2)
     then unify (commonFieldConstraints nodeId fieldSpec1 fieldSpec2 ++ cs)
     else return (Just (UnificationError rec1 rec2 nodeId))
 -- Eliminate
 unify ((T.CEqual nodeId var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2)) : cs)
   -- Try to reuse a type var if possible
-  | ((==) `on` List.sort) traits1 traits2 =
+  | List.sort traits1 == List.sort traits2 =
       if id1 <= id2
         then bind' nodeId var2 var1 cs
         else bind' nodeId var1 var2 cs
@@ -77,34 +76,30 @@ unify ((T.CEqual nodeId pRec1@(T.PartialRecord fieldSpec1 _) pRec2@(T.PartialRec
   where
     -- Combine the field specs.  The new, "super" field spec will use the type
     -- in fs1, if it exists, or otherwise the field spec in fs2.
-    fieldUnion :: [T.FieldSpec] -> [T.FieldSpec] -> [T.FieldSpec]
-    fieldUnion = List.unionBy ((==) `on` fst)
+    fieldUnion :: T.FieldSpec -> T.FieldSpec -> T.FieldSpec
+    fieldUnion = Map.unionWith const
 unify ((T.CEqual nodeId (T.PartialRecord fieldSpec1 _) rec@(T.Record fieldSpec2)) : cs) =
   if fieldSpec1 `isFieldSubset` fieldSpec2
     then unify (commonFieldConstraints nodeId fieldSpec1 fieldSpec2 ++ cs)
     else return (Just (ExpectedFields rec fieldSpec1 nodeId))
   where
-    isFieldSubset :: [T.FieldSpec] -> [T.FieldSpec] -> Bool
-    isFieldSubset = List.isSubsequenceOf `on` (List.sort . map fst)
+    isFieldSubset :: T.FieldSpec -> T.FieldSpec -> Bool
+    isFieldSubset = List.isSubsequenceOf `on` (List.sort . Map.keys)
 -- Swap
 unify ((T.CEqual nodeId t var@(T.Var _ _ _)) : cs) = unify (T.CEqual nodeId var t : cs)
 unify ((T.CEqual nodeId t pRec@(T.PartialRecord _ _)) : cs) = unify (T.CEqual nodeId pRec t : cs)
 -- Conflict
 unify ((T.CEqual nodeId t1 t2) : _) = return (Just (UnificationError t1 t2 nodeId))
 
-commonFieldConstraints :: AST.NodeId -> [T.FieldSpec] -> [T.FieldSpec] -> [T.Constraint]
+commonFieldConstraints :: AST.NodeId -> T.FieldSpec -> T.FieldSpec -> [T.Constraint]
 commonFieldConstraints nodeId fieldSpec1 fieldSpec2 =
-  let commonFields = intersectWith (,) fieldSpec1 fieldSpec2
-   in map (\(_, (t1, t2)) -> T.CEqual nodeId t1 t2) commonFields
+  Map.elems (Map.intersectionWith (T.CEqual nodeId) fieldSpec1 fieldSpec2)
 
 implements :: T.Type -> T.Trait -> Bool
 implements (T.Var _ varTraits _) trait = trait `elem` varTraits
 implements T.Int T.Numeric             = True
 implements T.Float T.Numeric           = True
 implements _ _                         = False
-
-intersectWith :: (Ord a) => (b -> b -> c) -> [(a, b)] -> [(a, b)] -> [(a, c)]
-intersectWith comb a b = Map.toList ((Map.intersectionWith comb `on` Map.fromList) a b)
 
 bind :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> Constrain (Either UnificationError [T.Constraint])
 bind nodeId var t cs =
@@ -122,7 +117,7 @@ bind nodeId var t cs =
     eliminate src target substType | substType == src = target
     eliminate src target (T.List substElemType) = T.List (eliminate src target substElemType)
     eliminate src target (T.Fun argTypes retType) = T.Fun (map (eliminate src target) argTypes) (eliminate src target retType)
-    eliminate src target (T.Record fieldSpec) = T.Record (map (second (eliminate src target)) fieldSpec)
+    eliminate src target (T.Record fieldSpec) = T.Record (Map.map (eliminate src target) fieldSpec)
     eliminate _ _ substType = substType
 
 bind' :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> Constrain (Maybe UnificationError)
@@ -135,13 +130,13 @@ occursIn _ T.Char = False
 occursIn _ T.String = False
 occursIn var (T.List elemType) = var `occursIn` elemType
 occursIn var (T.Fun argTypes retType) = any (var `occursIn`) argTypes || var `occursIn` retType
-occursIn var (T.Record fieldSpec) = any ((var `occursIn`) . snd) fieldSpec
+occursIn var (T.Record fieldSpec) = any (var `occursIn`) fieldSpec
 -- Algebraic types currently don't support vars (but will)
 occursIn _ (T.AlgebraicType _) = False
 occursIn var (T.TypeAlias _ t) = occursIn var t
 occursIn var1 var2 | var1 == var2 = True
 occursIn _ (T.Var _ _ _) = False
-occursIn var (T.PartialRecord fieldSpec _) = any ((var `occursIn`) . snd) fieldSpec
+occursIn var (T.PartialRecord fieldSpec _) = any (var `occursIn`) fieldSpec
 
 applySubst :: (T.Type, T.Type) -> T.Type -> T.Type
 applySubst _ T.Int = T.Int
@@ -150,12 +145,12 @@ applySubst _ T.Char = T.Char
 applySubst _ T.String = T.String
 applySubst subst (T.List elemType) = T.List (applySubst subst elemType)
 applySubst subst (T.Fun argTypes retType) = T.Fun (map (applySubst subst) argTypes) (applySubst subst retType)
-applySubst subst (T.Record fieldSpec) = T.Record (map (second (applySubst subst)) fieldSpec)
+applySubst subst (T.Record fieldSpec) = T.Record (Map.map (applySubst subst) fieldSpec)
 applySubst _ (T.AlgebraicType name) = T.AlgebraicType name
 applySubst subst (T.TypeAlias name t) = T.TypeAlias name (applySubst subst t)
 applySubst (var1, rep) var2 | var1 == var2 = rep
 applySubst _ var@(T.Var _ _ _) = var
-applySubst subst (T.PartialRecord fieldSpec prId) = T.PartialRecord (map (second (applySubst subst)) fieldSpec) prId
+applySubst subst (T.PartialRecord fieldSpec prId) = T.PartialRecord (Map.map (applySubst subst) fieldSpec) prId
 
 valueType :: Text -> Text -> State CompilerState (Either [UnificationError] T.Type)
 valueType modu valName = do

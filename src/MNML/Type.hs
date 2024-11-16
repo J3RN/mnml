@@ -6,6 +6,7 @@ module MNML.Type
     , VarId
     ) where
 
+import           Data.Map  (Map)
 import           Data.Text (Text)
 import           MNML.AST  (NodeId)
 
@@ -18,7 +19,7 @@ data Constraint
 data Trait = Numeric
   deriving (Eq, Ord, Show)
 
-type FieldSpec = (Text, Type)
+type FieldSpec = Map Text Type
 
 data Type
   = Int
@@ -27,11 +28,11 @@ data Type
   | String
   | List Type
   | Fun [Type] Type
-  | Record [FieldSpec]
+  | Record FieldSpec
   | AlgebraicType Text
   | TypeAlias Text Type
   -- Type var "a" requiring types to implement traits
   | Var Text [Trait] VarId
   -- A "partial record"; similar to a variable with traits
-  | PartialRecord [FieldSpec] VarId
+  | PartialRecord FieldSpec VarId
   deriving (Eq, Ord, Show)

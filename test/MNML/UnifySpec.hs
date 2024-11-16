@@ -81,11 +81,11 @@ spec =
     describe "records" $ do
       it "unifies singleton record" $ do
         let (res, _cs) = unify' "main = {foo: \"Bar\"}"
-        res `shouldBe` Right (T.Record [("foo", T.String)])
+        res `shouldBe` Right (T.Record (Map.fromList [("foo", T.String)]))
 
       it "unifies multiple field records" $ do
         let (res, _cs) = unify' "main = {foo: \"Bar\", bar: 1.0, baz: 'c'}"
-        res `shouldBe` Right (T.Record [("foo", T.String), ("bar", T.Float), ("baz", T.Char)])
+        res `shouldBe` Right (T.Record (Map.fromList [("foo", T.String), ("bar", T.Float), ("baz", T.Char)]))
 
     describe "constructors" $ do
       it "unifies constructor application" $ do
@@ -115,11 +115,11 @@ spec =
 
       it "unifies branches with different literals for the same record field" $ do
         let (res, _cs) = unify' (Text.unlines ["main = (foo) => {", "case foo of", "{foo: \"bar\"} -> 1", "{foo: \"baz\"} -> 2", "}"])
-        res `shouldBe` Right (T.Fun [T.PartialRecord [("foo", T.String)] 9] (T.Var "num" [T.Numeric] 3))
+        res `shouldBe` Right (T.Fun [T.PartialRecord (Map.fromList [("foo", T.String)]) 9] (T.Var "num" [T.Numeric] 3))
 
       it "unifies disjoint record patterns" $ do
         let (res, _cs) = unify' (Text.unlines ["main = (x) => {", "case x of", "{foo: \"bar\"} -> 1", "{bar: 1.0} -> 2", "}"])
-        res `shouldBe` Right (T.Fun [T.PartialRecord [("foo", T.String), ("bar", T.Float)] 9] (T.Var "num" [T.Numeric] 3))
+        res `shouldBe` Right (T.Fun [T.PartialRecord (Map.fromList [("foo", T.String), ("bar", T.Float)]) 9] (T.Var "num" [T.Numeric] 3))
 
       it "does not unify inconsistent record patterns" $ do
         let (res, _cs) = unify' (Text.unlines ["main = (foo) => {", "case foo of", "{foo: \"bar\"} -> 1", "{foo: 1.0} -> 2", "}"])
@@ -157,11 +157,11 @@ spec =
 
       it "allows functions with type constraints to stay generic" $ do
         let (res, _cs) = unify' (Text.unlines ["main = () => { {float: foo(6.1), numeric: foo(5)} }", "foo = (x) => {x * 5}"])
-        res `shouldBe` Right (T.Fun [] (T.Record [("float", T.Float), ("numeric", T.Var "num" [T.Numeric] 3)]))
+        res `shouldBe` Right (T.Fun [] (T.Record (Map.fromList [("float", T.Float), ("numeric", T.Var "num" [T.Numeric] 3)])))
 
       it "allows functions with partial records to stay generic" $ do
         let (res, _cs) = unify' (Text.unlines ["main = () => { {string: foo({abc: \"def\", name: \"foo\"}), float: foo({baz: 2, name: 5.1})} }", "foo = (x) => {", "case x of", "{name: a} -> a", "}"])
-        res `shouldBe` Right (T.Fun [] (T.Record [("string", T.String), ("float", T.Float)]))
+        res `shouldBe` Right (T.Fun [] (T.Record (Map.fromList [("string", T.String), ("float", T.Float)])))
 
       it "unifies trivial circular reference" $ do
         let (res, _cs) = unify' (Text.unlines ["main = () => { foo() }", "foo = () => { main() }"])

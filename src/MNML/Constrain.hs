@@ -130,7 +130,7 @@ constrain (AST.ERecord fields nodeId) = do
   let typedFields = zip (map fst fields) (map fst fieldResults)
       fieldConstraints = concatMap snd fieldResults
   retType <- freshTypeVar "ret" []
-  return (retType, T.CEqual nodeId retType (T.Record typedFields) : fieldConstraints)
+  return (retType, T.CEqual nodeId retType (T.Record (Map.fromList typedFields)) : fieldConstraints)
 constrain (AST.EList elems nodeId) = do
   elemResults <- mapM constrain elems
   elemType <- freshTypeVar "elem" []
@@ -158,7 +158,7 @@ constrainPattern (AST.PConstructor name argPatterns nodeId) = do
 constrainPattern (AST.PRecord fieldSpec nodeId) = do
   (fieldTypes, fieldConstraints) <- foldM foldRecord ([], []) fieldSpec
   retType <- freshTypeVar "record" []
-  partialRecordType <- freshPartialRecord fieldTypes
+  partialRecordType <- freshPartialRecord (Map.fromList fieldTypes)
   return (retType, T.CEqual nodeId retType partialRecordType : fieldConstraints)
   where
     foldRecord :: ([(Text, T.Type)], [T.Constraint]) -> (Text, AST.Pattern) -> Constrain ([(Text, T.Type)], [T.Constraint])
@@ -176,7 +176,7 @@ constrainPattern (AST.PLiteral lit _) = (,[]) <$> litType lit
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
 freshTypeVar name traits = T.Var name traits <$> varIdPlusPlus
 
-freshPartialRecord :: [T.FieldSpec] -> Constrain T.Type
+freshPartialRecord :: T.FieldSpec -> Constrain T.Type
 freshPartialRecord fields = T.PartialRecord fields <$> varIdPlusPlus
 
 -- Runs a function within its own scope (inheriting the existing scope)
@@ -252,7 +252,7 @@ typify (AST.TFun argTypes resType _) = do
 -- There might be a more elegant way, not sure
 typify (AST.TRecord fields _) = do
   fieldTypes <- mapM (\(fieldName, astType) -> ((fieldName,) <$>) <$> typify astType) fields
-  return (T.Record <$> sequence fieldTypes)
+  return (T.Record . Map.fromList <$> sequence fieldTypes)
 typify (AST.TVar name _) = Right <$> freshTypeVar name []
 
 moduleNamedType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
