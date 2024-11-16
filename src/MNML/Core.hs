@@ -7,10 +7,12 @@ module MNML.Core
     , Type (..)
     ) where
 
-import           Data.Text (Text)
+import           Data.List (intercalate)
+import           Data.Text (Text, unpack)
 
 newtype Funcref
   = Funcref Text
+
 data Expr
   = Expr
       { _callee :: Text
@@ -41,21 +43,44 @@ data Modu
       }
 
 instance Show Expr where
-  show e = concat $ "(" : show (_callee e) : map showArg (_args e) ++ [")"]
-    where showArg (Left t)   = show t
-          showArg (Right e') = show e'
+  show e = concat ["(", unpack (_callee e), " ", unwords (map showArg (_args e)), ")"]
+    where
+      showArg (Left t)   = unpack t
+      showArg (Right e') = show e'
 
 instance Show Type where
   show I32                 = "i32"
   show F64                 = "f64"
   show (FR (Funcref name)) = concat ["(func ", show name, ")"]
 
+
 instance Show Function where
-  show f = concat $ "(func " : map show (_params f) ++ map show (_locals f) ++ [show (_return f)] ++ map show (_body f) ++ [")"]
+  show f =
+    concat
+      [ "(func "
+      , unwords (map (parameterize . show) (_params f))
+      , " "
+      , unwords (map (localize . show) (_locals f))
+      , " "
+      , (returnize . show) (_return f)
+      , "\n"
+      , unlines (map show (_body f))
+      , ")"
+      ]
+    where
+      parameterize x = "(param " <>x <> ")"
+      localize x = "(local " <>x <>")"
+      returnize x = "(return " <>x <>")"
 
 instance Show Memory where
   show (Memory Nothing)     = "(memory)"
   show (Memory (Just size)) = concat ["(memory", show size, ")"]
 
 instance Show Modu where
-  show (Modu {memories = mems, functions = funcs }) = concat $ "(module " : map show mems ++ map show funcs ++ [")"]
+  show (Modu {memories = mems, functions = funcs}) =
+    concat
+      [ "(module\n"
+      , "  ", intercalate "\n" (map show mems)
+      , "  ", intercalate "\n " (map show funcs)
+      , ")"
+      ]
