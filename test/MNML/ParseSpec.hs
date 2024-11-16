@@ -16,7 +16,10 @@ import           Test.Hspec
 import           Text.Parsec         (sourceColumn)
 
 parse' :: Text -> (Either Text [Declaration], CompilerState)
-parse' source = first (first (Text.pack . show)) (runState (parse "test") (emptyState {_modules = Map.fromList [("test", source)]}))
+parse' source =
+  first
+    (first (Text.pack . show))
+    (runState (parse "test") (emptyState {_modules = Map.fromList [("test", source)]}))
 
 spec :: Spec
 spec =
@@ -33,21 +36,43 @@ spec =
 
       it "parses constructor with one argument" $ do
         let (ast, _cs) = parse' "main = Success({ body: \"hello world!\"})"
-        ast `shouldBe` Right [ValueDecl "main" (EApp (EConstructor "Success" 1) [ERecord [("body", ELit (LString "hello world!" 4) 3)] 2] 5) 0]
+        ast
+          `shouldBe` Right
+            [ ValueDecl
+                "main"
+                (EApp (EConstructor "Success" 1) [ERecord [("body", ELit (LString "hello world!" 4) 3)] 2] 5)
+                0
+            ]
 
       it "tracks constructor with one argument spans correctly" $ do
         let (ast, cs) = parse' "main = Success({ body: \"hello world!\"})"
-            Right [ValueDecl _ (EApp (EConstructor "Success" cId) [ERecord [("body", ELit (LString "hello world!" _) _)] _] appId) _] = ast
+            Right
+              [ ValueDecl
+                  _
+                  (EApp (EConstructor "Success" cId) [ERecord [("body", ELit (LString "hello world!" _) _)] _] appId)
+                  _
+                ] = ast
         shouldSpan cs appId 8 40
         shouldSpan cs cId 8 15
 
       it "parses constructor with multiple arguments" $ do
         let (ast, _cs) = parse' "main = BinOp(1, '*', 2)"
-        ast `shouldBe` Right [ValueDecl "main" (EApp (EConstructor "BinOp" 1) [ELit (LInt 1 3) 2, ELit (LChar '*' 5) 4, ELit (LInt 2 7) 6] 8) 0]
+        ast
+          `shouldBe` Right
+            [ ValueDecl
+                "main"
+                (EApp (EConstructor "BinOp" 1) [ELit (LInt 1 3) 2, ELit (LChar '*' 5) 4, ELit (LInt 2 7) 6] 8)
+                0
+            ]
 
       it "tracks constructor with multiple arguments spans correctly" $ do
         let (ast, cs) = parse' "main =  BinOp(1, '*', 2)"
-            Right [ValueDecl "main" (EApp (EConstructor "BinOp" cId) [ELit (LInt 1 _) _, ELit (LChar '*' _) _, ELit (LInt 2 _) _] appId) _] = ast
+            Right
+              [ ValueDecl
+                  "main"
+                  (EApp (EConstructor "BinOp" cId) [ELit (LInt 1 _) _, ELit (LChar '*' _) _, ELit (LInt 2 _) _] appId)
+                  _
+                ] = ast
         shouldSpan cs appId 9 25
         shouldSpan cs cId 9 14
 
@@ -63,7 +88,9 @@ spec =
 
       it "parses two" $ do
         let (ast, _cs) = parse' "main =  {name: \"Jon\", age: 30}"
-        ast `shouldBe` Right [ValueDecl "main" (ERecord [("name", ELit (LString "Jon" 3) 2), ("age", ELit (LInt 30 5) 4)] 1) 0]
+        ast
+          `shouldBe` Right
+            [ValueDecl "main" (ERecord [("name", ELit (LString "Jon" 3) 2), ("age", ELit (LInt 30 5) 4)] 1) 0]
 
       it "tracks single-item spans correctly" $ do
         let (ast, cs) = parse' "main =  {name: \"Jon\", age: 30}"
@@ -79,8 +106,8 @@ spec =
                 "main"
                 ( ECase
                     (EVar "foo" 2)
-                    [ (PConstructor "Just" [PVar "n" 4] 3, EVar "n" 5),
-                      (PConstructor "None" [] 6, ELit (LInt 5 8) 7)
+                    [ (PConstructor "Just" [PVar "n" 4] 3, EVar "n" 5)
+                    , (PConstructor "None" [] 6, ELit (LInt 5 8) 7)
                     ]
                     1
                 )
@@ -90,7 +117,8 @@ spec =
     describe "binary expressions" $ do
       it "parses addition" $ do
         let (ast, _cs) = parse' "main = 5 + 3"
-        ast `shouldBe` Right [ValueDecl "main" (EBinary (Add 4) (ELit (LInt 5 2) 1) (ELit (LInt 3 6) 5) 3) 0]
+        ast
+          `shouldBe` Right [ValueDecl "main" (EBinary (Add 4) (ELit (LInt 5 2) 1) (ELit (LInt 3 6) 5) 3) 0]
 
       it "tracks addition expression span correctly" $ do
         let (ast, cs) = parse' "main = 5 + 3"
@@ -99,7 +127,13 @@ spec =
 
       it "does left association" $ do
         let (ast, _cs) = parse' "main = 1 + 2 + 3"
-        ast `shouldBe` Right [ValueDecl "main" (EBinary (Add 8) (EBinary (Add 4) (ELit (LInt 1 2) 1) (ELit (LInt 2 6) 5) 3) (ELit (LInt 3 10) 9) 7) 0]
+        ast
+          `shouldBe` Right
+            [ ValueDecl
+                "main"
+                (EBinary (Add 8) (EBinary (Add 4) (ELit (LInt 1 2) 1) (ELit (LInt 2 6) 5) 3) (ELit (LInt 3 10) 9) 7)
+                0
+            ]
 
       it "tracks left association spans correctly" $ do
         let (ast, cs) = parse' "main = 1 + 2 + 3"
@@ -124,7 +158,18 @@ spec =
 
       it "tracks paren spans correctly" $ do
         let (ast, cs) = parse' "main = (5 + 3) * 3 == 20 + 4"
-            (Right [ValueDecl _ (EBinary (Equals _) (EBinary (Mul _) (EBinary (Add _) _ _ lAddId) _ mulId) (EBinary (Add _) _ _ rAddId) eqId) _]) = ast
+            ( Right
+                [ ValueDecl
+                    _
+                    ( EBinary
+                        (Equals _)
+                        (EBinary (Mul _) (EBinary (Add _) _ _ lAddId) _ mulId)
+                        (EBinary (Add _) _ _ rAddId)
+                        eqId
+                      )
+                    _
+                  ]
+              ) = ast
         shouldSpan cs eqId 8 29
         shouldSpan cs mulId 8 20
         shouldSpan cs lAddId 9 14
@@ -142,7 +187,8 @@ spec =
 
       it "handles chained applications" $ do
         let (ast, _cs) = parse' "main = foo(1)(2)"
-        ast `shouldBe` Right [ValueDecl "main" (EApp (EApp (EVar "foo" 1) [ELit (LInt 1 3) 2] 6) [ELit (LInt 2 5) 4] 7) 0]
+        ast
+          `shouldBe` Right [ValueDecl "main" (EApp (EApp (EVar "foo" 1) [ELit (LInt 1 3) 2] 6) [ELit (LInt 2 5) 4] 7) 0]
 
       it "tracks chained application spans correctly" $ do
         let (ast, cs) = parse' "main = foo(1)(2)"
@@ -169,4 +215,18 @@ shouldSpan (CompilerState {_spans = spans}) nodeId beg end =
   let (SourceSpan sBeg sEnd) = spans Map.! nodeId
       actualBeg = sourceColumn sBeg
       actualEnd = sourceColumn sEnd
-   in unless (actualBeg == beg && actualEnd == end) (expectationFailure (concat ["Expected span from ", show beg, " to ", show end, ", but actually spanned from ", show actualBeg, " to ", show actualEnd]))
+   in unless
+        (actualBeg == beg && actualEnd == end)
+        ( expectationFailure
+            ( concat
+                [ "Expected span from "
+                , show beg
+                , " to "
+                , show end
+                , ", but actually spanned from "
+                , show actualBeg
+                , " to "
+                , show actualEnd
+                ]
+            )
+        )
