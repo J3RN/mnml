@@ -28,8 +28,8 @@ type PendingType = (QualifiedValueReference, T.Type, AST.NodeId)
 
 data ConstraintError
   = UnknownVar AST.NodeId
-  | UnknownVal Text
-  | UnknownConstructor Text
+  | UnknownVal Text -- AST.NodeId
+  | UnknownConstructor Text -- AST.NodeId
   | UnknownType Text -- AST.NodeId
   | ParseError P.ParseError
   deriving (Eq, Show)
