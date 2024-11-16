@@ -31,9 +31,6 @@ data ConstraintError
   | UnknownVal Text
   | UnknownConstructor Text
   | UnknownType Text -- AST.NodeId
-  | ArgumentLengthMismatch AST.NodeId
-  | OccursError T.Type T.Type AST.NodeId
-  | ExpectedTraits T.Type [T.Trait] AST.NodeId
   | ParseError P.ParseError
   deriving (Eq, Show)
 
