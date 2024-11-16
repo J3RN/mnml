@@ -7,6 +7,7 @@ module MNML.Type
     ) where
 
 import           Data.Map  (Map)
+import           Data.Set  (Set)
 import           Data.Text (Text)
 import           MNML.AST  (NodeId)
 
@@ -32,7 +33,7 @@ data Type
   | AlgebraicType Text
   | TypeAlias Text Type
   -- Type var "a" requiring types to implement traits
-  | Var Text [Trait] VarId
+  | Var Text (Set Trait) VarId
   -- A "partial record"; similar to a variable with traits
   | PartialRecord FieldSpec VarId
   deriving (Eq, Ord, Show)

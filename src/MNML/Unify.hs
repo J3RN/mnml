@@ -9,6 +9,8 @@ import qualified Data.List           as List
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Data.Maybe          (fromMaybe)
+import           Data.Set            (Set)
+import qualified Data.Set            as Set
 import           Data.Text           (Text)
 import           MNML                (CompilerState (..), varIdPlusPlus)
 import qualified MNML.AST            as AST
@@ -19,7 +21,7 @@ data UnificationError
   = ArgumentLengthMismatch AST.NodeId
   | UnificationError T.Type T.Type AST.NodeId
   | OccursError T.Type T.Type AST.NodeId
-  | ExpectedTraits T.Type [T.Trait] AST.NodeId
+  | ExpectedTraits T.Type (Set T.Trait) AST.NodeId
   | ExpectedFields T.Type T.FieldSpec AST.NodeId
   | ConstraintError C.ConstraintError
   deriving (Eq, Show)
@@ -50,14 +52,14 @@ unify ((T.CEqual nodeId rec1@(T.Record fieldSpec1) rec2@(T.Record fieldSpec2)) :
 -- Eliminate
 unify ((T.CEqual nodeId var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2)) : cs)
   -- Try to reuse a type var if possible
-  | List.sort traits1 == List.sort traits2 =
+  | traits1 == traits2 =
       if id1 <= id2
         then bind' nodeId var2 var1 cs
         else bind' nodeId var1 var2 cs
   | (var1 `implements`) `all` traits2 = bind' nodeId var2 var1 cs
   | (var2 `implements`) `all` traits1 = bind' nodeId var1 var2 cs
   | otherwise = do
-      newVar <- T.Var "x" (traits1 `List.union` traits2) <$> varIdPlusPlus
+      newVar <- T.Var "x" (traits1 `Set.union` traits2) <$> varIdPlusPlus
       bind nodeId var1 newVar cs >>=
         either (return . Left) (bind nodeId var2 newVar) >>=
         either (return . Just) unify

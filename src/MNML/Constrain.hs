@@ -10,6 +10,7 @@ import           Data.Bifunctor      (first)
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe)
+import qualified Data.Set            as Set
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
 import           MNML                (CompilerState (..), moduleDefCache,
@@ -174,7 +175,7 @@ constrainPattern (AST.PList elemPats nodeId) = do
 constrainPattern (AST.PLiteral lit _) = (,[]) <$> litType lit
 
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
-freshTypeVar name traits = T.Var name traits <$> varIdPlusPlus
+freshTypeVar name traits = T.Var name (Set.fromList traits) <$> varIdPlusPlus
 
 freshPartialRecord :: T.FieldSpec -> Constrain T.Type
 freshPartialRecord fields = T.PartialRecord fields <$> varIdPlusPlus
