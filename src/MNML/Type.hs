@@ -17,6 +17,7 @@ data Constraint
   = CEqual NodeId Type Type
   deriving (Eq, Show)
 
+-- Temporary until we get user-defined traits
 data Trait = Numeric
   deriving (Eq, Ord, Show)
 
