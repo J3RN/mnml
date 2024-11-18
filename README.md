@@ -132,7 +132,7 @@ Nil = Nil
 
 The type `Nil` has exactly one value, `Nil`.
 
-A truly minimal approach would be to have `Nil` be a constructor that needs to be invoked to create values (i.e. `Nil` is a constructor and `Nil()` is a value), but this deviates from other similar languages and creates syntactic noise.
+A truly minimal approach would have been to create constructors (i.e. functions) even when no argument is required (e.g. `Nil`).  That would means that the constructor would need to be invoked without any arguments to create a value (i.e. `Nil` is a constructor and `Nil()` is a value).  This, however, deviates from other similar languages and creates syntactic noise.
 
 The syntax used here is a slight modification of the ML syntax used by Haskell, Elm, and others.  I personally find this confusing, and might move to something closer to Rust's syntax:
 ```rust
@@ -149,7 +149,7 @@ Since record types are a bit awkward to write often, mnml has an "alias" mechani
 alias { name: String, age: Int } as User
 ```
 
-With this alias defined in your code, instead of needing to write `{ name: String, age: Int }` in multiple places, you can just write `User` instead.  It's nice for typing and aids in refactoring.
+With this alias defined in your code, instead of needing to write `{ name: String, age: Int }` in multiple places, you can just write `User` instead.  It's nice for typing and helps with refactoring.
 
 You can create aliases of other types too, if you want.  For instance:
 ```mnml
