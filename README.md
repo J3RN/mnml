@@ -1,4 +1,4 @@
-# mnml
+![mnml logo](./mnml.svg)
 
 Pronounced "minimal". A small functional language with strong, static typing, type inference, immutable data structures, and records.
 
