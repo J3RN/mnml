@@ -60,9 +60,9 @@ unify ((T.CEqual nodeId var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2)) :
   | (var2 `implements`) `all` traits1 = bind' nodeId var1 var2 cs
   | otherwise = do
       newVar <- T.Var "x" (traits1 `Set.union` traits2) <$> varIdPlusPlus
-      bind nodeId var1 newVar cs >>=
-        either (return . Left) (bind nodeId var2 newVar) >>=
-        either (return . Just) unify
+      bind nodeId var1 newVar cs
+        >>= either (return . Left) (bind nodeId var2 newVar)
+        >>= either (return . Just) unify
 unify ((T.CEqual nodeId var@(T.Var _ traits _) t) : cs) =
   if (t `implements`) `all` traits
     then bind' nodeId var t cs
@@ -72,9 +72,9 @@ unify ((T.CEqual nodeId pRec1@(T.PartialRecord fieldSpec1 _) pRec2@(T.PartialRec
       supersetFieldSpec = fieldUnion fieldSpec1 fieldSpec2
    in do
         supersetPartialRecord <- T.PartialRecord supersetFieldSpec <$> varIdPlusPlus
-        bind nodeId pRec1 supersetPartialRecord cs >>=
-          either (return . Left) (bind nodeId pRec2 supersetPartialRecord) >>=
-          either (return . Just) (unify . (++ commonFieldCs))
+        bind nodeId pRec1 supersetPartialRecord cs
+          >>= either (return . Left) (bind nodeId pRec2 supersetPartialRecord)
+          >>= either (return . Just) (unify . (++ commonFieldCs))
   where
     -- Combine the field specs.  The new, "super" field spec will use the type
     -- in fs1, if it exists, or otherwise the field spec in fs2.
@@ -103,7 +103,12 @@ implements T.Int T.Numeric             = True
 implements T.Float T.Numeric           = True
 implements _ _                         = False
 
-bind :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> Constrain (Either UnificationError [T.Constraint])
+bind ::
+  AST.NodeId ->
+  T.Type ->
+  T.Type ->
+  [T.Constraint] ->
+  Constrain (Either UnificationError [T.Constraint])
 bind nodeId var t cs =
   if var `occursIn` t
     then return (Left (OccursError var t nodeId))

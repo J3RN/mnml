@@ -105,9 +105,19 @@ constrain (AST.ECase subj branches nodeId) = do
       -- Every clause type must match the return type of the case expression
       clauseConstraints = map (T.CEqual nodeId retType . fst) clauseRes
       clauseSubConstraints = concatMap snd clauseRes
-  return (retType, concat [patternConstraints, clauseConstraints, subjConstraints, patternSubConstraints, clauseSubConstraints])
+  return
+    ( retType
+    , concat
+        [ patternConstraints
+        , clauseConstraints
+        , subjConstraints
+        , patternSubConstraints
+        , clauseSubConstraints
+        ]
+    )
   where
-    constrainBranch :: (AST.Pattern, AST.Expr) -> Constrain ((T.Type, [T.Constraint]), (T.Type, [T.Constraint]))
+    constrainBranch ::
+      (AST.Pattern, AST.Expr) -> Constrain ((T.Type, [T.Constraint]), (T.Type, [T.Constraint]))
     constrainBranch (bPattern, bExpr) = withNewScope $ do
       patternConstraints <- constrainPattern bPattern
       clauseConstraints <- constrain bExpr
@@ -131,7 +141,8 @@ constrain (AST.EList elems nodeId) = do
   retType <- freshTypeVar "ret" []
   let consistencyConstraints = map (T.CEqual nodeId elemType . fst) elemResults
       elemConstraints = concatMap snd elemResults
-  return (retType, T.CEqual nodeId (T.List elemType) retType : consistencyConstraints ++ elemConstraints)
+  return
+    (retType, T.CEqual nodeId (T.List elemType) retType : consistencyConstraints ++ elemConstraints)
 
 -- Create constraints based on patterns
 constrainPattern :: AST.Pattern -> Constrain (T.Type, [T.Constraint])
@@ -155,7 +166,10 @@ constrainPattern (AST.PRecord fieldSpec nodeId) = do
   partialRecordType <- freshPartialRecord (Map.fromList fieldTypes)
   return (retType, T.CEqual nodeId retType partialRecordType : fieldConstraints)
   where
-    foldRecord :: ([(Text, T.Type)], [T.Constraint]) -> (Text, AST.Pattern) -> Constrain ([(Text, T.Type)], [T.Constraint])
+    foldRecord ::
+      ([(Text, T.Type)], [T.Constraint]) ->
+      (Text, AST.Pattern) ->
+      Constrain ([(Text, T.Type)], [T.Constraint])
     foldRecord (fields, fieldCons) (fieldName, fieldPattern) = do
       (fieldType, fieldSubCons) <- constrainPattern fieldPattern
       return ((fieldName, fieldType) : fields, fieldSubCons ++ fieldCons)
@@ -211,7 +225,8 @@ findConType decls conName =
       )
       decls
 
-conTypeFromConstructors :: Text -> Text -> [(Text, [AST.Type])] -> Constrain (Either ConstraintError T.Type)
+conTypeFromConstructors ::
+  Text -> Text -> [(Text, [AST.Type])] -> Constrain (Either ConstraintError T.Type)
 conTypeFromConstructors conName tName constructors = do
   foldl (<>) (Left (UnknownConstructor conName))
     <$> mapM
@@ -264,7 +279,8 @@ moduleNamedType modu typeName = do
           )
           decls
 
-valueConstraints :: Text -> Text -> State CompilerState (Either [ConstraintError] (T.Type, [T.Constraint]))
+valueConstraints ::
+  Text -> Text -> State CompilerState (Either [ConstraintError] (T.Type, [T.Constraint]))
 valueConstraints modu valName = do
   res <$> runStateT (valueConstraints' modu valName) (initialEnv modu)
   where

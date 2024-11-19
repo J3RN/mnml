@@ -53,7 +53,6 @@ instance Show Type where
   show F64                 = "f64"
   show (FR (Funcref name)) = concat ["(func ", show name, ")"]
 
-
 instance Show Function where
   show f =
     concat
@@ -68,9 +67,9 @@ instance Show Function where
       , ")"
       ]
     where
-      parameterize x = "(param " <>x <> ")"
-      localize x = "(local " <>x <>")"
-      returnize x = "(return " <>x <>")"
+      parameterize x = "(param " <> x <> ")"
+      localize x = "(local " <> x <> ")"
+      returnize x = "(return " <> x <> ")"
 
 instance Show Memory where
   show (Memory Nothing)     = "(memory)"
@@ -80,7 +79,9 @@ instance Show Modu where
   show (Modu {memories = mems, functions = funcs}) =
     concat
       [ "(module\n"
-      , "  ", intercalate "\n" (map show mems)
-      , "  ", intercalate "\n " (map show funcs)
+      , "  "
+      , intercalate "\n" (map show mems)
+      , "  "
+      , intercalate "\n " (map show funcs)
       , ")"
       ]

@@ -105,7 +105,12 @@ varIdPlusPlus = lift (state (\s -> (_nextTypeId s, s {_nextTypeId = _nextTypeId 
 
 -- Cache ops
 
-writeThrough :: (Ord key) => Lens' CompilerState (Map key val) -> (key -> State CompilerState (Either err val)) -> key -> State CompilerState (Either err val)
+writeThrough ::
+  (Ord key) =>
+  Lens' CompilerState (Map key val) ->
+  (key -> State CompilerState (Either err val)) ->
+  key ->
+  State CompilerState (Either err val)
 writeThrough l calc key = do
   maybeVal <- gets ((!? key) . (^. l))
   case maybeVal of

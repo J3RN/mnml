@@ -17,7 +17,8 @@ import           Text.Parsec         (sourceColumn)
 
 parse' :: Text -> (Either Text [Declaration], CompilerState)
 parse' source =
-  first (first (Text.pack . show))
+  first
+    (first (Text.pack . show))
     (runState (moduleDef "test") (emptyState {_modules = Map.fromList [("test", source)]}))
 
 spec :: Spec

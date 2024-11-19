@@ -260,7 +260,9 @@ binaryExpr =
 
 boolExpr :: Parser Expr
 boolExpr =
-  captureChainl1 termExpr (EBinary <$> captureSpan ((And <$ reserved "and") <|> (Or <$ reserved "or")))
+  captureChainl1
+    termExpr
+    (EBinary <$> captureSpan ((And <$ reserved "and") <|> (Or <$ reserved "or")))
 
 termExpr :: Parser Expr
 termExpr =
