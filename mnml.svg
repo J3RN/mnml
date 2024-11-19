@@ -6,12 +6,12 @@
   height="160">
   <style>
     path {
-      fill: white;
+      fill: black;
     }
 
-    @media (prefers-color-scheme: light) {
+    @media (prefers-color-scheme: dark) {
       path {
-        fill: black;
+        fill: white;
       }
     }
   </style>
