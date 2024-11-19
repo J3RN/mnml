@@ -29,6 +29,7 @@ library
       MNML.AST
       MNML.Constrain
       MNML.Core
+      MNML.Generate
       MNML.Parse
       MNML.Type
       MNML.Unify

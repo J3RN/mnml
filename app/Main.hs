@@ -9,6 +9,7 @@ import qualified Data.Map            as Map
 import qualified Data.Text           as Text
 import qualified Data.Text.IO        as TIO
 import           MNML                (CompilerState (..), Modules, emptyState)
+import           MNML.Generate       (codeGen)
 import           System.Directory    (listDirectory)
 import           System.FilePath     (dropExtension, isExtensionOf)
 
@@ -16,9 +17,8 @@ main :: IO ()
 main = do
   modules <- loadModules "."
   let state = (emptyState {_modules = modules})
-  -- result = evalState (codeGen "test" "main") state
-  -- print result
-  return ()
+      result = evalState (codeGen "test" "main") state
+  print result
 
 loadModules :: FilePath -> IO Modules
 loadModules basePath = do

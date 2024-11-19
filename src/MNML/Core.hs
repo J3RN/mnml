@@ -3,7 +3,7 @@ module MNML.Core
     ( Expr (..)
     , Function (..)
     , Memory (..)
-    , Modu (..)
+    , Module (..)
     , Type (..)
     ) where
 
@@ -36,8 +36,8 @@ data Function
 newtype Memory
   = Memory (Maybe Int)
 
-data Modu
-  = Modu
+data Module
+  = Module
       { memories  :: [Memory]
       , functions :: [Function]
       }
@@ -75,8 +75,8 @@ instance Show Memory where
   show (Memory Nothing)     = "(memory)"
   show (Memory (Just size)) = concat ["(memory", show size, ")"]
 
-instance Show Modu where
-  show (Modu {memories = mems, functions = funcs}) =
+instance Show Module where
+  show (Module {memories = mems, functions = funcs}) =
     concat
       [ "(module\n"
       , "  "
