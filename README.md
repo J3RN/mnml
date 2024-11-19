@@ -111,14 +111,16 @@ mnml has algebraic data types, similar to Haskell, Elm, Rust, and other language
 What this means is that you can define your own data structure that is a *product* of other types, meaning that it contains multiple types:
 ```mnml
 Pair(a, b) = P(a, b)
+
+myPair = P("Hello", 5)
 ```
-Here, `Pair(a, b)` is a *type template*.  A type made from this template replaces the *type variables*, `a` and `b`, with types, e.g. `Pair(String, Int)`.  This definition specifies a single *constructor*, `P`, a function invoked to make a value of this type, e.g. `P("Hello", 5)`.
+Here, `Pair(a, b)` is a *type constructor*.  You can think of a type constructor as a type-level function that must be called with types as arguments to return a type, e.g. `Pair(String, Int)` (the "returned" type is represented as `Pair(String, Int)`, but a tweak to mnml could make it have a different text representation than just the "call", if we wanted).  This definition specifies a single *value constructor* (frequently but confusingly just "constructor" for short), `P`, a function invoked to make a value of this type, e.g. `P("Hello", 5)` (again, the value and call are represented exactly the same).
 
 An algebraic data type can also be a *sum* of other types, meaning that it either contains one type or another:
 ```mnml
 Result(a, b) = Success(a) | Failure(b)
 ```
-Here, `Result(a, b)` is the type template, and `Success(a)` and `Failure(b)` are constructors of values of that type.  For instance, the type `Result(Int, String)` contains the values `Success(42)` and `Failure("Something went wrong")`.
+Here, `Result(a, b)` is the type constructor, and `Success(a)` and `Failure(b)` are value constructors of that type.  For instance, the type `Result(Int, String)` contains the values `Success(42)` and `Failure("Something went wrong")`.  The salient point here is that values of type `Result(Int, String)` contain an `Int` or a `String`, but never both.
 
 An algebraic data type can also be a mix of both sums and products, for instance:
 ```mnml
@@ -132,9 +134,9 @@ Nil = Nil
 
 The type `Nil` has exactly one value, `Nil`.
 
-A truly minimal approach would have been to create constructors (i.e. functions) even when no argument is required (e.g. `Nil`).  That would means that the constructor would need to be invoked without any arguments to create a value (i.e. `Nil` is a constructor and `Nil()` is a value).  This, however, deviates from other similar languages and creates syntactic noise.
+A truly minimal approach would have been to create constructors (both type and value level; i.e. functions) even when no argument is required (e.g. `Nil`).  That would means that the constructor would need to be invoked without any arguments to create a value (e.g. `Nil` is a value constructor and `Nil()` is a value).  This, however, deviates from other similar languages and creates syntactic noise.
 
-The syntax used here is a slight modification of the ML syntax used by Haskell, Elm, and others.  I personally find this confusing, and might move to something closer to Rust's syntax:
+The syntax used here is a slight modification of the ML syntax used by Haskell, Elm, and others.  I personally find the mixing of type-level and value-level constructs confusing, and might move to something closer to Rust's syntax:
 ```rust
 enum Result<T, E> {
 	Ok(T),
