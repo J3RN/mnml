@@ -6,16 +6,12 @@ module MNML.Constrain
 import           Control.Monad       (foldM)
 import           Control.Monad.State (State, StateT, gets, lift, modify,
                                       runStateT)
-import           Data.Bifunctor      (first)
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
-import           Data.Maybe          (listToMaybe, mapMaybe)
 import qualified Data.Set            as Set
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
-import           MNML                (CompilerState (..), moduleDefCache,
-                                      valueDefCache, varIdPlusPlus,
-                                      writeThrough)
+import           MNML                (CompilerState (..), varIdPlusPlus)
 import qualified MNML.AST            as AST
 import qualified MNML.Parse          as P
 import qualified MNML.Type           as T
@@ -200,9 +196,9 @@ litType (AST.LString _ _) = return T.String
 
 constructorType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
 constructorType modu conName = do
-  mDef <- lift (moduleDef modu)
+  mDef <- lift (P.moduleDef modu)
   case mDef of
-    Left err    -> return (Left err)
+    Left err    -> return (Left (ParseError err))
     Right decls -> findConType decls conName
 
 findConType :: [AST.Declaration] -> Text -> Constrain (Either ConstraintError T.Type)
@@ -231,9 +227,6 @@ typifyConstructor argTypes tName = do
   typifiedTypes <- mapM typify argTypes
   return (T.Fun <$> sequence typifiedTypes <*> return (T.AlgebraicType tName))
 
-findMaybe :: (a -> Maybe b) -> [a] -> Maybe b
-findMaybe f = listToMaybe . mapMaybe f
-
 typify :: AST.Type -> Constrain (Either ConstraintError T.Type)
 typify (AST.TInt _) = return (Right T.Int)
 typify (AST.TFloat _) = return (Right T.Float)
@@ -255,7 +248,7 @@ typify (AST.TVar name _) = Right <$> freshTypeVar name []
 
 moduleNamedType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
 moduleNamedType modu typeName = do
-  mDefRes <- lift (moduleDef modu)
+  mDefRes <- lift (P.moduleDef modu)
   case mDefRes of
     Right mDef -> findDef typeName mDef
     Left _     -> return (Left (UnknownType typeName))
@@ -281,7 +274,7 @@ valueConstraints modu valName = do
 
 valueConstraints' :: Text -> Text -> Constrain (T.Type, [T.Constraint])
 valueConstraints' modu valName = do
-  def <- lift (valueDef modu valName)
+  def <- lift (P.valueDef modu valName)
   case def of
     Right expr -> do
       modify (\s -> s {_module = modu, _pendingTypes = []})
@@ -290,30 +283,9 @@ valueConstraints' modu valName = do
       -- TODO: WARNING: This is a trick for circular references but *only works in the same module*
       modify (\s -> s {_bindings = Map.insert valName (fst res) (_bindings s)})
       foldM foldPendingType res pTypes
-    Left err -> giveUp err valName
+    Left err -> giveUp (ParseError err) valName
   where
     foldPendingType :: (T.Type, [T.Constraint]) -> PendingType -> Constrain (T.Type, [T.Constraint])
     foldPendingType (t, cs) ((modu', valName'), t', nodeId) = do
       (t'', cs') <- valueConstraints' modu' valName'
       return (t, T.CEqual nodeId t' t'' : cs' ++ cs)
-
-valueDef :: Text -> Text -> State CompilerState (Either ConstraintError AST.Expr)
-valueDef modu valName = writeThrough valueDefCache findValDef (modu, valName)
-  where
-    findValDef (m, v) = do
-      mDef <- moduleDef m
-      return (mDef >>= findDef v)
-    findDef name defs =
-      maybe
-        (Left (UnknownVal name))
-        Right
-        ( findMaybe
-            ( \case
-                (AST.ValueDecl n expr _) | n == name -> Just expr
-                _ -> Nothing
-            )
-            defs
-        )
-
-moduleDef :: Text -> State CompilerState (Either ConstraintError [AST.Declaration])
-moduleDef = writeThrough moduleDefCache ((first ParseError <$>) <$> P.parse)

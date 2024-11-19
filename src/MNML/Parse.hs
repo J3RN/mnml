@@ -1,17 +1,20 @@
 module MNML.Parse
-    ( ParseError
-    , parse
+    ( MNML.Parse.ParseError
+    , moduleDef
+    , valueDef
     ) where
 
 import           Control.Monad       (foldM)
 import           Control.Monad.State (State, gets, lift, modify)
 import           Data.Functor        (($>))
 import qualified Data.Map            as Map
+import           Data.Maybe          (listToMaybe, mapMaybe)
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
 import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState (..), SourceSpan (..),
-                                      nextNodeId, stateSpans)
+                                      moduleDefCache, nextNodeId, stateSpans,
+                                      valueDefCache, writeThrough)
 import           MNML.AST            (Declaration (..), Expr (..), Literal (..),
                                       NodeId, Operator (..), Pattern (..),
                                       Type (..))
@@ -32,25 +35,52 @@ nextId = lens _nextId (\pe ni -> pe {_nextId = ni})
 
 type Parser = ParsecT Text ParseEnv (State CompilerState)
 
+data ParseError
+  = ParseError Text.Parsec.ParseError
+  | ModuleNotFound Text
+  | ValueNotFound Text Text
+  deriving (Eq, Show)
+
 -- Client API
-parse :: Text -> State CompilerState (Either ParseError [Declaration])
+
+valueDef :: Text -> Text -> State CompilerState (Either MNML.Parse.ParseError Expr)
+valueDef modu valName = writeThrough valueDefCache findValDef (modu, valName)
+  where
+    findValDef (m, v) = do
+      mDef <- moduleDef m
+      return (mDef >>= findDef v)
+    findDef name defs =
+      maybe
+        (Left (ValueNotFound modu valName))
+        Right
+        ( findMaybe
+            ( \case
+                (ValueDecl n expr _) | n == name -> Just expr
+                _ -> Nothing
+            )
+            defs
+        )
+
+moduleDef :: Text -> State CompilerState (Either MNML.Parse.ParseError [Declaration])
+moduleDef = writeThrough moduleDefCache parse
+
+-- Function to run the parser
+
+parse :: Text -> State CompilerState (Either MNML.Parse.ParseError [Declaration])
 parse modu = do
   moduleTextResult <- gets ((Map.!? modu) . _modules)
   initialNodeId <- gets _nextNodeId
   let initialEnv = (ParseEnv {_nextId = initialNodeId})
   case moduleTextResult of
     Just rawCode ->
-      runParserT
-        (MNML.Parse.mod <* updateGlobalNextId)
-        initialEnv
-        (Text.unpack (modu <> ".mnml"))
-        rawCode
+      either (Left . MNML.Parse.ParseError) Right
+        <$> runParserT
+          (MNML.Parse.mod <* updateGlobalNextId)
+          initialEnv
+          (Text.unpack (modu <> ".mnml"))
+          rawCode
     Nothing ->
-      runParserT
-        (fail (concat ["File '", Text.unpack modu <> ".mnml'", " not loaded"]))
-        initialEnv
-        (Text.unpack (modu <> ".mnml"))
-        Text.empty
+      return (Left (ModuleNotFound modu))
   where
     updateGlobalNextId :: Parser ()
     updateGlobalNextId = do
@@ -58,6 +88,9 @@ parse modu = do
       lift (modify (over nextNodeId (const nodeId)))
 
 -- Helpers
+
+findMaybe :: (a -> Maybe b) -> [a] -> Maybe b
+findMaybe f = listToMaybe . mapMaybe f
 
 -- Fix name later
 nodeIdPlusPlus :: Parser NodeId
