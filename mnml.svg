@@ -2,12 +2,14 @@
   version="1.1"
   xmlns="http://www.w3.org/2000/svg"
   xmlns:xlink="http://www.w3.org/1999/xlink"
-  width="710"
+  width="720"
   height="160">
   <style>
     path {
       stroke: black;
       stroke-width: 20;
+      stroke-linejoin: round;
+      stroke-linecap: round;
       fill: none;
     }
 
@@ -18,35 +20,35 @@
     }
   </style>
   <path
-      d="M 10,160
-         v -100
+      d="M 10,150
+         v -90
          a 50,50 0 0 1 100,0
-         v 100
-         v -100
+         v 90
+         v -90
          a 50,50 0 0 1 100,0
-         v 100
+         v 90
 	 " />
   <path
-      d="M 260,160
-         v -100
+      d="M 260,150
+         v -90
          a 50,50 0 0 1 100,0
-         v 100
-         v -100
+         v 90
+         v -90
          a 50,50 0 0 0 -100,0
-         v 100
+         v 90
 	 " />
   <path
-      d="M 410,160
-         v -100
+      d="M 410,150
+         v -90
          a 50,50 0 0 1 100,0
-         v 100
-         v -100
+         v 90
+         v -90
          a 50,50 0 0 1 100,0
-         v 100
+         v 90
 	 " />
   <path
-      d="M 660,0
-         v 100
+      d="M 660,10
+         v 90
          a 50,50 0 0 0 50,50
          " />
 </svg>
