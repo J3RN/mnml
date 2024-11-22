@@ -1,11 +1,14 @@
 module MNML.Constrain
     ( ConstraintError
+    , SpanTypeAnnotation (..)
+    , TypedValueDecl
     , valueConstraints
     ) where
 
 import           Control.Monad       (foldM)
 import           Control.Monad.State (State, StateT, gets, lift, modify,
                                       runStateT)
+import           Data.Functor        (($>))
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import qualified Data.Set            as Set
@@ -37,6 +40,9 @@ data ConstrainEnv
 
 type Constrain a = StateT ConstrainEnv (State CompilerState) a
 
+type SpanDecl = AST.Declaration AST.SpanAnnotation
+type SpanExpr = AST.Expr AST.SpanAnnotation
+
 initialEnv :: Text -> ConstrainEnv
 initialEnv modu =
   ConstrainEnv
@@ -58,7 +64,7 @@ addError err = modify (\s -> s {_errors = err : _errors s})
 giveUp :: ConstraintError -> Text -> Constrain (T.Type, [T.Constraint])
 giveUp err name = addError err >> (,[]) <$> freshTypeVar name []
 
-constrain :: AST.Expr AST.SpanAnnotation -> Constrain (T.Type, [T.Constraint])
+constrain :: SpanExpr -> Constrain (T.Type, [T.Constraint])
 constrain (AST.EVar name spanA) = do
   lookupRes <- gets ((!? name) . _bindings)
   case lookupRes of
@@ -210,7 +216,7 @@ constructorType modu conName = do
     Left err    -> return (Left (ParseError err))
     Right decls -> findConType decls conName
 
-findConType :: [AST.Declaration AST.SpanAnnotation] -> Text -> Constrain (Either ConstraintError T.Type)
+findConType :: [SpanDecl] -> Text -> Constrain (Either ConstraintError T.Type)
 findConType decls conName =
   foldl (<>) (Left (UnknownConstructor conName))
     <$> mapM
@@ -263,7 +269,7 @@ moduleNamedType modu typeName = do
     Right mDef -> findDef typeName mDef
     Left _     -> return (Left (UnknownType typeName))
   where
-    findDef :: Text -> [AST.Declaration AST.SpanAnnotation] -> Constrain (Either ConstraintError T.Type)
+    findDef :: Text -> [SpanDecl] -> Constrain (Either ConstraintError T.Type)
     findDef name decls =
       foldl (<>) (Left (UnknownType typeName))
         <$> mapM
@@ -274,29 +280,35 @@ moduleNamedType modu typeName = do
           )
           decls
 
-valueConstraints ::
-  Text -> Text -> State CompilerState (Either [ConstraintError] (T.Type, [T.Constraint]))
-valueConstraints modu valName = do
-  res <$> runStateT (valueConstraints' modu valName) (initialEnv modu)
+data SpanTypeAnnotation
+  = SpanTypeAnnotation T.Type AST.SourceSpan
+type TypedValueDecl = (QualifiedValueReference, AST.Expr SpanTypeAnnotation)
+
+valueConstraints :: QualifiedValueReference -> State CompilerState (Either [ConstraintError] ([TypedValueDecl], [T.Constraint]))
+valueConstraints qvr@(modu, _) = do
+  res <$> runStateT (valueConstraints' qvr) (initialEnv modu)
   where
-    res :: ((T.Type, [T.Constraint]), ConstrainEnv) -> Either [ConstraintError] (T.Type, [T.Constraint])
+    res :: (([TypedValueDecl], [T.Constraint]), ConstrainEnv) -> Either [ConstraintError] ([TypedValueDecl], [T.Constraint])
     res (t, ConstrainEnv {_errors = []})   = Right t
     res (_, ConstrainEnv {_errors = errs}) = Left errs
 
-valueConstraints' :: Text -> Text -> Constrain (T.Type, [T.Constraint])
-valueConstraints' modu valName = do
-  def <- lift (P.valueDef modu valName)
+valueConstraints' :: QualifiedValueReference -> Constrain ([TypedValueDecl], [T.Constraint])
+valueConstraints' qvr@(modu, valName) = do
+  def <- lift (P.valueDef qvr)
   case def of
     Right expr -> do
       modify (\s -> s {_module = modu, _pendingTypes = []})
-      res <- constrain expr
+      (resT, cs) <- constrain expr
       pTypes <- gets _pendingTypes
       -- TODO: WARNING: This is a trick for circular references but *only works in the same module*
-      modify (\s -> s {_bindings = Map.insert valName (fst res) (_bindings s)})
-      foldM foldPendingType res pTypes
-    Left err -> giveUp (ParseError err) valName
+      modify (\s -> s {_bindings = Map.insert valName resT (_bindings s)})
+      foldM foldPendingType ([(qvr, (\(AST.SpanAnnotation s) -> SpanTypeAnnotation resT s) <$> expr)], cs) pTypes
+    Left err -> addError (ParseError err) $> ([], [])
   where
-    foldPendingType :: (T.Type, [T.Constraint]) -> PendingType -> Constrain (T.Type, [T.Constraint])
-    foldPendingType (t, cs) ((modu', valName'), t', spanA) = do
-      (t'', cs') <- valueConstraints' modu' valName'
-      return (t, T.CEqual spanA t' t'' : cs' ++ cs)
+    foldPendingType :: ([TypedValueDecl], [T.Constraint]) -> PendingType -> Constrain ([TypedValueDecl], [T.Constraint])
+    foldPendingType (tvds, cs) (qvr', t, spanA) = do
+      (tvds', cs') <- valueConstraints' qvr'
+      case tvds' of
+        []       -> return (tvds ++ tvds', cs ++ cs')
+        (_, e):_ -> let (SpanTypeAnnotation t' _) = AST.getAnno e
+                     in return (tvds ++ tvds', T.CEqual spanA t t' : cs ++ cs')

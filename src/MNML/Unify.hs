@@ -4,6 +4,7 @@ module MNML.Unify
     ) where
 
 import           Control.Monad.State (State, StateT, modify, runStateT)
+import           Data.Bifunctor      (second)
 import           Data.Function       (on)
 import qualified Data.List           as List
 import           Data.Map            (Map, (!?))
@@ -18,11 +19,11 @@ import qualified MNML.Constrain      as C
 import qualified MNML.Type           as T
 
 data UnificationError
-  = ArgumentLengthMismatch AST.NodeId
-  | UnificationError T.Type T.Type AST.NodeId
-  | OccursError T.Type T.Type AST.NodeId
-  | ExpectedTraits T.Type (Set T.Trait) AST.NodeId
-  | ExpectedFields T.Type T.FieldSpec AST.NodeId
+  = ArgumentLengthMismatch AST.SpanAnnotation
+  | UnificationError T.Type T.Type AST.SpanAnnotation
+  | OccursError T.Type T.Type AST.SpanAnnotation
+  | ExpectedTraits T.Type (Set T.Trait) AST.SpanAnnotation
+  | ExpectedFields T.Type T.FieldSpec AST.SpanAnnotation
   | ConstraintError C.ConstraintError
   deriving (Eq, Show)
 
@@ -93,7 +94,7 @@ unify ((T.CEqual nodeId t pRec@(T.PartialRecord _ _)) : cs) = unify (T.CEqual no
 -- Conflict
 unify ((T.CEqual nodeId t1 t2) : _) = return (Just (UnificationError t1 t2 nodeId))
 
-commonFieldConstraints :: AST.NodeId -> T.FieldSpec -> T.FieldSpec -> [T.Constraint]
+commonFieldConstraints :: AST.SpanAnnotation -> T.FieldSpec -> T.FieldSpec -> [T.Constraint]
 commonFieldConstraints nodeId fieldSpec1 fieldSpec2 =
   Map.elems (Map.intersectionWith (T.CEqual nodeId) fieldSpec1 fieldSpec2)
 
@@ -104,7 +105,7 @@ implements T.Float T.Numeric           = True
 implements _ _                         = False
 
 bind ::
-  AST.NodeId ->
+  AST.SpanAnnotation ->
   T.Type ->
   T.Type ->
   [T.Constraint] ->
@@ -127,7 +128,7 @@ bind nodeId var t cs =
     eliminate src target (T.Record fieldSpec) = T.Record (Map.map (eliminate src target) fieldSpec)
     eliminate _ _ substType = substType
 
-bind' :: AST.NodeId -> T.Type -> T.Type -> [T.Constraint] -> Constrain (Maybe UnificationError)
+bind' :: AST.SpanAnnotation -> T.Type -> T.Type -> [T.Constraint] -> Constrain (Maybe UnificationError)
 bind' nodeId var t cs = bind nodeId var t cs >>= either (return . Just) unify
 
 occursIn :: T.Type -> T.Type -> Bool
@@ -159,13 +160,16 @@ applySubst (var1, rep) var2 | var1 == var2 = rep
 applySubst _ var@(T.Var _ _ _) = var
 applySubst subst (T.PartialRecord fieldSpec prId) = T.PartialRecord (Map.map (applySubst subst) fieldSpec) prId
 
-valueType :: Text -> Text -> State CompilerState (Either [UnificationError] T.Type)
-valueType modu valName = do
-  constraintsRes <- C.valueConstraints modu valName
+valueType :: QualifiedValueReference -> State CompilerState (Either [UnificationError] [C.TypedValueDecl])
+valueType qvr = do
+  constraintsRes <- C.valueConstraints qvr
   case constraintsRes of
-    Right (inferType, constraints) -> do
+    Right (rtds, constraints) -> do
       res <- runStateT (unify constraints) Map.empty
       case res of
-        (Just err, _) -> return (Left [err])
-        (Nothing, subst) -> return (Right (fromMaybe inferType (subst !? inferType)))
+        (Just err, _)    -> return (Left [err])
+        (Nothing, subst) -> return (Right (map (resolveTypeAnno subst) rtds))
     Left constrainErrs -> return (Left (map ConstraintError constrainErrs))
+  where
+    resolveTypeAnno :: Subst -> C.TypedValueDecl -> C.TypedValueDecl
+    resolveTypeAnno subst = second ((\(C.SpanTypeAnnotation t s) -> C.SpanTypeAnnotation (fromMaybe t (subst !? t)) s) <$>)

@@ -1,12 +1,14 @@
 module MNML.Generate
-    ( codeGen
+    ( generate
     ) where
 
 import           Control.Monad.State (State)
+import           Data.List           (intercalate)
 import           Data.Text           (Text)
-import           MNML
+import qualified Data.Text           as Text
+import           MNML                (CompilerState, QualifiedValueReference)
+import qualified MNML.Constrain      as C
 import qualified MNML.Core           as Core
-import qualified MNML.Parse          as Parse
 import qualified MNML.Unify          as Unify
 
 newtype GenerateError
@@ -15,11 +17,12 @@ newtype GenerateError
 newtype GenerateState
   = GenerateState { modu :: Core.Module }
 
-codeGen :: Text -> Text -> State CompilerState (Either [GenerateError] Text)
-codeGen modName valName =
-  either (map UnificationError) (const (generate modName valName)) <$> Unify.valueType modName valName
+generate :: QualifiedValueReference -> State CompilerState (Either [GenerateError] Text)
+generate qvr = do
+  typeRes <- Unify.valueType qvr
+  case typeRes of
+    Left errs  -> return (Left (UnificationError <$> errs))
+    Right tvds -> return (Right (Text.pack (intercalate "\n" (map generate' tvds))))
 
-generate :: Text -> Text -> State CompilerState (Either [GenerateError] Text)
-generate modName valName = do
-  valDef <- lift (P.valueDef modName valName)
-
+generate' :: C.TypedValueDecl -> String
+generate' = _
