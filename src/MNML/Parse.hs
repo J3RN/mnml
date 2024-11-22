@@ -5,33 +5,28 @@ module MNML.Parse
     ) where
 
 import           Control.Monad       (foldM)
-import           Control.Monad.State (State, gets, lift, modify)
+import           Control.Monad.State (State, gets)
 import           Data.Functor        (($>))
 import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe)
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
-import           Lens.Micro          (Lens', lens, over)
-import           MNML                (CompilerState (..), SourceSpan (..),
-                                      moduleDefCache, nextNodeId, stateSpans,
+import           MNML                (CompilerState (..), moduleDefCache,
                                       valueDefCache, writeThrough)
 import           MNML.AST            (Declaration (..), Expr (..), Literal (..),
-                                      NodeId, Operator (..), Pattern (..),
+                                      Operator (..), Pattern (..),
+                                      SourceSpan (..), SpanAnnotation (..),
                                       Type (..))
-import           Text.Parsec         (ParseError, ParsecT, SourcePos, alphaNum,
-                                      char, eof, getPosition, getState, lower,
-                                      many, many1, manyTill, modifyState, oneOf,
-                                      option, runParserT, sepBy1, space, try,
-                                      upper, (<|>))
+import           Text.Parsec         (ParseError, ParsecT, alphaNum, char, eof,
+                                      getPosition, lower, many, many1, manyTill,
+                                      oneOf, option, runParserT, sepBy1, space,
+                                      try, upper, (<|>))
 import qualified Text.Parsec.Token   as Tok
 
 -- Data Types
 
-newtype ParseEnv
-  = ParseEnv { _nextId :: NodeId }
-
-nextId :: Lens' ParseEnv NodeId
-nextId = lens _nextId (\pe ni -> pe {_nextId = ni})
+-- This used to be useful and now is not
+type ParseEnv = ()
 
 type Parser = ParsecT Text ParseEnv (State CompilerState)
 
@@ -43,7 +38,7 @@ data ParseError
 
 -- Client API
 
-valueDef :: Text -> Text -> State CompilerState (Either MNML.Parse.ParseError Expr)
+valueDef :: Text -> Text -> State CompilerState (Either MNML.Parse.ParseError (Expr SpanAnnotation))
 valueDef modu valName = writeThrough valueDefCache findValDef (modu, valName)
   where
     findValDef (m, v) = do
@@ -61,83 +56,63 @@ valueDef modu valName = writeThrough valueDefCache findValDef (modu, valName)
             defs
         )
 
-moduleDef :: Text -> State CompilerState (Either MNML.Parse.ParseError [Declaration])
+moduleDef :: Text -> State CompilerState (Either MNML.Parse.ParseError [Declaration SpanAnnotation])
 moduleDef = writeThrough moduleDefCache parse
 
 -- Function to run the parser
 
-parse :: Text -> State CompilerState (Either MNML.Parse.ParseError [Declaration])
+parse :: Text -> State CompilerState (Either MNML.Parse.ParseError [Declaration SpanAnnotation])
 parse modu = do
   moduleTextResult <- gets ((Map.!? modu) . _modules)
-  initialNodeId <- gets _nextNodeId
-  let initialEnv = (ParseEnv {_nextId = initialNodeId})
   case moduleTextResult of
     Just rawCode ->
       either (Left . MNML.Parse.ParseError) Right
         <$> runParserT
-          (MNML.Parse.mod <* updateGlobalNextId)
-          initialEnv
+          MNML.Parse.mod
+          ()
           (Text.unpack (modu <> ".mnml"))
           rawCode
     Nothing ->
       return (Left (ModuleNotFound modu))
-  where
-    updateGlobalNextId :: Parser ()
-    updateGlobalNextId = do
-      ParseEnv {_nextId = nodeId} <- getState
-      lift (modify (over nextNodeId (const nodeId)))
 
 -- Helpers
 
 findMaybe :: (a -> Maybe b) -> [a] -> Maybe b
 findMaybe f = listToMaybe . mapMaybe f
 
--- Fix name later
-nodeIdPlusPlus :: Parser NodeId
-nodeIdPlusPlus = do
-  ParseEnv {_nextId = nodeId} <- getState
-  modifyState (over nextId (+ 1))
-  return nodeId
+-- Helpers
 
-recordSpan :: SourcePos -> SourcePos -> NodeId -> Parser ()
-recordSpan start end nodeId = do
-  let nodeSpan = SourceSpan start end
-  lift (modify (over stateSpans (Map.insert nodeId nodeSpan)))
-
--- This function needs to record the span of p, retrieve the next NodeID, increment the node
--- counter, and associate the NodeID with the recorded span.
-captureSpan :: Parser (NodeId -> b) -> Parser b
+-- This function needs to record the span of p
+captureSpan :: Parser (SpanAnnotation -> b SpanAnnotation) -> Parser (b SpanAnnotation)
 captureSpan p = do
-  nodeId <- nodeIdPlusPlus
   start <- getPosition
   node <- p
   end <- getPosition
-  recordSpan start end nodeId
-  return (node nodeId)
+  return (node (SpanAnnotation (SourceSpan start end)))
 
 -- Top-level Parsers
-mod :: Parser [Declaration]
+mod :: Parser [Declaration SpanAnnotation]
 mod = do
   _ <- many whiteSpace
   manyTill decl eof
 
-decl :: Parser Declaration
+decl :: Parser (Declaration SpanAnnotation)
 decl = typeDecl <|> typeAliasDecl <|> valueDecl
 
-typeDecl :: Parser Declaration
+typeDecl :: Parser (Declaration SpanAnnotation)
 typeDecl = captureSpan $ do
   name <- typeIdentifier
   _ <- equal
   constructors <- sepBy1 constructor bar
   return (TypeDecl name constructors)
 
-constructor :: Parser (Text, [Type])
+constructor :: Parser (Text, [Type SpanAnnotation])
 constructor = do
   name <- typeIdentifier
   cData <- parens (commaSep pType) <|> pure []
   return (name, cData)
 
-typeAliasDecl :: Parser Declaration
+typeAliasDecl :: Parser (Declaration SpanAnnotation)
 typeAliasDecl = captureSpan $ do
   _ <- reserved "alias"
   expansionType <- pType
@@ -145,7 +120,7 @@ typeAliasDecl = captureSpan $ do
   name <- typeIdentifier
   return (TypeAliasDecl name expansionType)
 
-valueDecl :: Parser Declaration
+valueDecl :: Parser (Declaration SpanAnnotation)
 valueDecl = captureSpan $ do
   name <- identifier
   _ <- equal
@@ -154,7 +129,7 @@ valueDecl = captureSpan $ do
 
 -- Type Parsers
 
-pType :: Parser Type
+pType :: Parser (Type SpanAnnotation)
 pType =
   funType
     <|> recordType
@@ -162,29 +137,29 @@ pType =
     <|> simpleType
     <|> captureSpan (TNamedType <$> typeIdentifier)
 
-funType :: Parser Type
+funType :: Parser (Type SpanAnnotation)
 funType = captureSpan $ do
   argTypes <- parens (commaSep pType)
   _ <- rArrow
   returnType <- pType
   return (TFun argTypes returnType)
 
-recordType :: Parser Type
+recordType :: Parser (Type SpanAnnotation)
 recordType = captureSpan $ do
   fields <- braces (commaSep fieldDecl)
   return (TRecord fields)
 
-fieldDecl :: Parser (Text, Type)
+fieldDecl :: Parser (Text, Type SpanAnnotation)
 fieldDecl = do
   fieldName <- identifier
   _ <- colon
   fieldType <- pType
   return (fieldName, fieldType)
 
-listType :: Parser Type
+listType :: Parser (Type SpanAnnotation)
 listType = captureSpan (TList <$> brackets pType)
 
-simpleType :: Parser Type
+simpleType :: Parser (Type SpanAnnotation)
 simpleType =
   captureSpan (TInt <$ reserved "Int")
     <|> captureSpan (TFloat <$ reserved "Float")
@@ -193,14 +168,14 @@ simpleType =
 
 -- Expression Parsers
 
-expression :: Parser Expr
+expression :: Parser (Expr SpanAnnotation)
 expression = try binaryExpr <|> unaryExpr
 
-unaryExpr :: Parser Expr
+unaryExpr :: Parser (Expr SpanAnnotation)
 unaryExpr = try appExpr <|> primaryExpr
 
 -- Any expression that is not an application
-primaryExpr :: Parser Expr
+primaryExpr :: Parser (Expr SpanAnnotation)
 primaryExpr =
   caseExpr
     -- lambda and generalized parens both start with open paren
@@ -212,14 +187,14 @@ primaryExpr =
     <|> captureSpan (ELit <$> literal)
     <|> parens expression
 
-lambdaExpr :: Parser Expr
+lambdaExpr :: Parser (Expr SpanAnnotation)
 lambdaExpr = captureSpan $ do
   params <- parens (commaSep identifier)
   _ <- fatArrow
   body <- braces expression
   return (ELambda params body)
 
-caseExpr :: Parser Expr
+caseExpr :: Parser (Expr SpanAnnotation)
 caseExpr = captureSpan $ do
   _ <- reserved "case"
   expr <- expression
@@ -227,14 +202,14 @@ caseExpr = captureSpan $ do
   cases <- many1 caseBranch
   return (ECase expr cases)
 
-caseBranch :: Parser (Pattern, Expr)
+caseBranch :: Parser (Pattern SpanAnnotation, Expr SpanAnnotation)
 caseBranch = do
   pat <- pattern
   _ <- rArrow
   expr <- expression
   return (pat, expr)
 
-appExpr :: Parser Expr
+appExpr :: Parser (Expr SpanAnnotation)
 appExpr = do
   start <- getPosition
   func <- primaryExpr
@@ -247,64 +222,60 @@ appExpr = do
       )
   foldM
     ( \expr (params, end) -> do
-        nodeId <- nodeIdPlusPlus
-        recordSpan start end nodeId
-        return (EApp expr params nodeId)
+        return (EApp expr params (SpanAnnotation (SourceSpan start end)))
     )
     func
     apps
 
-binaryExpr :: Parser Expr
+binaryExpr :: Parser (Expr SpanAnnotation)
 binaryExpr =
-  captureChainl1 boolExpr (EBinary <$> captureSpan (Equals <$ dEqual))
+  captureChainl1 boolExpr (EBinary <$> (Equals <$ dEqual))
 
-boolExpr :: Parser Expr
+boolExpr :: Parser (Expr SpanAnnotation)
 boolExpr =
   captureChainl1
     termExpr
-    (EBinary <$> captureSpan ((And <$ reserved "and") <|> (Or <$ reserved "or")))
+    (EBinary <$> ((And <$ reserved "and") <|> (Or <$ reserved "or")))
 
-termExpr :: Parser Expr
+termExpr :: Parser (Expr SpanAnnotation)
 termExpr =
-  captureChainl1 factorExpr (EBinary <$> captureSpan ((Add <$ plus) <|> (Sub <$ minus)))
+  captureChainl1 factorExpr (EBinary <$> ((Add <$ plus) <|> (Sub <$ minus)))
 
-factorExpr :: Parser Expr
+factorExpr :: Parser (Expr SpanAnnotation)
 factorExpr =
-  captureChainl1 unaryExpr (EBinary <$> captureSpan ((Mul <$ star) <|> (Div <$ slash)))
+  captureChainl1 unaryExpr (EBinary <$> ((Mul <$ star) <|> (Div <$ slash)))
 
-captureChainl1 :: Parser a -> Parser (a -> a -> NodeId -> a) -> Parser a
+captureChainl1 :: Parser (a SpanAnnotation) -> Parser (a SpanAnnotation -> a SpanAnnotation -> SpanAnnotation -> a SpanAnnotation) -> Parser (a SpanAnnotation)
 captureChainl1 p op =
   do
     start <- getPosition
-    x <- p
-    rest start x
+    lhs <- p
+    rest start lhs
   where
-    rest start x =
+    rest start lhs =
       do
-        nodeId <- nodeIdPlusPlus
         f <- op
-        y <- p
+        rhs <- p
         end <- getPosition
-        recordSpan start end nodeId
-        let res = f x y nodeId in rest start res
-        <|> return x
+        let res = f lhs rhs (SpanAnnotation (SourceSpan start end))
+         in rest start res <|> return res
 
-listExpr :: Parser Expr
+listExpr :: Parser (Expr SpanAnnotation)
 listExpr = do
   captureSpan (EList <$> brackets (commaSep expression))
 
-recordExpr :: Parser Expr
+recordExpr :: Parser (Expr SpanAnnotation)
 recordExpr = do
   captureSpan $ ERecord <$> braces (commaSep recordFieldExpr)
 
-recordFieldExpr :: Parser (Text, Expr)
+recordFieldExpr :: Parser (Text, Expr SpanAnnotation)
 recordFieldExpr = do
   name <- identifier
   _ <- colon
   value <- expression
   return (name, value)
 
-literal :: Parser Literal
+literal :: Parser (Literal SpanAnnotation)
 literal =
   captureSpan $
     try (LFloat <$> float)
@@ -314,7 +285,7 @@ literal =
 
 -- Pattern Parsers
 
-pattern :: Parser Pattern
+pattern :: Parser (Pattern SpanAnnotation)
 pattern =
   try constructorPattern
     <|> recordPattern
@@ -323,27 +294,27 @@ pattern =
     <|> captureSpan (symbol "_" $> PDiscard)
     <|> captureSpan (PVar <$> identifier)
 
-constructorPattern :: Parser Pattern
+constructorPattern :: Parser (Pattern SpanAnnotation)
 constructorPattern = captureSpan $ do
   con <- typeIdentifier
   pats <- option [] (parens (commaSep pattern))
   return (PConstructor con pats)
 
-recordPattern :: Parser Pattern
+recordPattern :: Parser (Pattern SpanAnnotation)
 recordPattern = captureSpan $ do
   fields <- braces (commaSep fieldPattern)
   return (PRecord fields)
 
 -- TODO: We need a cons operator or similar
-listPattern :: Parser Pattern
+listPattern :: Parser (Pattern SpanAnnotation)
 listPattern = captureSpan $ do
   pats <- brackets (commaSep pattern)
   return (PList pats)
 
-literalPattern :: Parser Pattern
+literalPattern :: Parser (Pattern SpanAnnotation)
 literalPattern = captureSpan (PLiteral <$> literal)
 
-fieldPattern :: Parser (Text, Pattern)
+fieldPattern :: Parser (Text, Pattern SpanAnnotation)
 fieldPattern = do
   name <- identifier
   _ <- colon

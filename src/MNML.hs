@@ -1,14 +1,10 @@
 module MNML
     ( CompilerState (..)
     , Modules
-    , SourceSpan (..)
     , emptyState
     , moduleDefCache
-    , nextNodeId
     , nextTypeId
     , stateModules
-    , stateSpans
-    , stateTypes
     , valueConstraintsCache
     , valueDefCache
     , varIdPlusPlus
@@ -20,39 +16,22 @@ import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, (^.))
-import           MNML.AST            (NodeId)
 import qualified MNML.AST            as AST
-import           MNML.Type           (Type)
 import qualified MNML.Type           as T
-import           Text.Parsec         (SourcePos)
 
-data SourceSpan
-  = SourceSpan
-      { _spanStart :: SourcePos
-      , _spanEnd   :: SourcePos
-      }
-  deriving (Eq, Show)
-
--- The compiler state, contains various information about terms, etc
+-- The compiler state contains caches, essentially
 
 type Modules = Map Text Text
 
-type Spans = Map NodeId SourceSpan
+type ModuleDefCache = Map Text [AST.Declaration AST.SpanAnnotation]
 
-type Types = Map NodeId Type
-
-type ModuleDefCache = Map Text [AST.Declaration]
-
-type ValueDefCache = Map (Text, Text) AST.Expr
+type ValueDefCache = Map (Text, Text) (AST.Expr AST.SpanAnnotation)
 
 type ValueConstraintsCache = Map (Text, Text) (T.Type, [T.Constraint])
 
 data CompilerState
   = CompilerState
-      { _spans                 :: Spans
-      , _modules               :: Modules
-      , _types                 :: Types
-      , _nextNodeId            :: AST.NodeId
+      { _modules               :: Modules
       , _nextTypeId            :: T.VarId
       , _moduleDefCache        :: ModuleDefCache
       , _valueDefCache         :: ValueDefCache
@@ -63,10 +42,7 @@ data CompilerState
 emptyState :: CompilerState
 emptyState =
   CompilerState
-    { _spans = Map.empty
-    , _modules = Map.empty
-    , _types = Map.empty
-    , _nextNodeId = 0
+    { _modules = Map.empty
     , _nextTypeId = 0
     , _moduleDefCache = Map.empty
     , _valueDefCache = Map.empty
@@ -75,17 +51,8 @@ emptyState =
 
 -- Assorted lenses
 
-stateSpans :: Lens' CompilerState Spans
-stateSpans = lens _spans (\cs spans -> cs {_spans = spans})
-
 stateModules :: Lens' CompilerState Modules
 stateModules = lens _modules (\cs mods -> cs {_modules = mods})
-
-stateTypes :: Lens' CompilerState Types
-stateTypes = lens _types (\cs types -> cs {_types = types})
-
-nextNodeId :: Lens' CompilerState AST.NodeId
-nextNodeId = lens _nextNodeId (\cs ni -> cs {_nextNodeId = ni})
 
 nextTypeId :: Lens' CompilerState T.VarId
 nextTypeId = lens _nextTypeId (\cs vi -> cs {_nextTypeId = vi})

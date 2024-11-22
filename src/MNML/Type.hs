@@ -9,12 +9,12 @@ module MNML.Type
 import           Data.Map  (Map)
 import           Data.Set  (Set)
 import           Data.Text (Text)
-import           MNML.AST  (NodeId)
+import           MNML.AST  (SpanAnnotation)
 
 type VarId = Integer
 
 data Constraint
-  = CEqual NodeId Type Type
+  = CEqual SpanAnnotation Type Type
   deriving (Eq, Show)
 
 -- Temporary until we get user-defined traits
