@@ -1,6 +1,7 @@
 module MNML
     ( CompilerState (..)
     , Modules
+    , QualifiedValueReference
     , emptyState
     , moduleDefCache
     , nextTypeId
@@ -19,15 +20,17 @@ import           Lens.Micro          (Lens', lens, over, (^.))
 import qualified MNML.AST            as AST
 import qualified MNML.Type           as T
 
+type QualifiedValueReference = (Text, Text)
+
 -- The compiler state contains caches, essentially
 
 type Modules = Map Text Text
 
 type ModuleDefCache = Map Text [AST.Declaration AST.SpanAnnotation]
 
-type ValueDefCache = Map (Text, Text) (AST.Expr AST.SpanAnnotation)
+type ValueDefCache = Map QualifiedValueReference (AST.Expr AST.SpanAnnotation)
 
-type ValueConstraintsCache = Map (Text, Text) (T.Type, [T.Constraint])
+type ValueConstraintsCache = Map QualifiedValueReference (T.Type, [T.Constraint])
 
 data CompilerState
   = CompilerState

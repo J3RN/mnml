@@ -11,7 +11,8 @@ import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe)
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
-import           MNML                (CompilerState (..), moduleDefCache,
+import           MNML                (CompilerState (..),
+                                      QualifiedValueReference, moduleDefCache,
                                       valueDefCache, writeThrough)
 import           MNML.AST            (Declaration (..), Expr (..), Literal (..),
                                       Operator (..), Pattern (..),
@@ -33,20 +34,20 @@ type Parser = ParsecT Text ParseEnv (State CompilerState)
 data ParseError
   = ParseError Text.Parsec.ParseError
   | ModuleNotFound Text
-  | ValueNotFound Text Text
+  | ValueNotFound QualifiedValueReference
   deriving (Eq, Show)
 
 -- Client API
 
-valueDef :: Text -> Text -> State CompilerState (Either MNML.Parse.ParseError (Expr SpanAnnotation))
-valueDef modu valName = writeThrough valueDefCache findValDef (modu, valName)
+valueDef :: QualifiedValueReference -> State CompilerState (Either MNML.Parse.ParseError (Expr SpanAnnotation))
+valueDef qvr = writeThrough valueDefCache findValDef qvr
   where
     findValDef (m, v) = do
       mDef <- moduleDef m
       return (mDef >>= findDef v)
     findDef name defs =
       maybe
-        (Left (ValueNotFound modu valName))
+        (Left (ValueNotFound qvr))
         Right
         ( findMaybe
             ( \case

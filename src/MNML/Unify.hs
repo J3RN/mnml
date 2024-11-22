@@ -11,8 +11,8 @@ import qualified Data.Map            as Map
 import           Data.Maybe          (fromMaybe)
 import           Data.Set            (Set)
 import qualified Data.Set            as Set
-import           Data.Text           (Text)
-import           MNML                (CompilerState (..), varIdPlusPlus)
+import           MNML                (CompilerState (..),
+                                      QualifiedValueReference, varIdPlusPlus)
 import qualified MNML.AST            as AST
 import qualified MNML.Constrain      as C
 import qualified MNML.Type           as T

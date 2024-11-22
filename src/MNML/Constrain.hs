@@ -11,14 +11,13 @@ import qualified Data.Map            as Map
 import qualified Data.Set            as Set
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
-import           MNML                (CompilerState (..), varIdPlusPlus)
+import           MNML                (CompilerState (..),
+                                      QualifiedValueReference, varIdPlusPlus)
 import qualified MNML.AST            as AST
 import qualified MNML.Parse          as P
 import qualified MNML.Type           as T
 
 type Bindings = Map Text T.Type
-
-type QualifiedValueReference = (Text, Text)
 
 type PendingType = (QualifiedValueReference, T.Type, AST.SpanAnnotation)
 
