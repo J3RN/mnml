@@ -1,6 +1,5 @@
 module MNML.Constrain
     ( ConstraintError
-    , SpanTypeAnnotation (..)
     , TypedValueDecl
     , valueConstraints
     ) where
@@ -8,6 +7,7 @@ module MNML.Constrain
 import           Control.Monad       (foldM)
 import           Control.Monad.State (State, StateT, gets, lift, modify,
                                       runStateT)
+import           Data.Bifunctor      (bimap, second)
 import           Data.Functor        (($>))
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
@@ -15,18 +15,22 @@ import qualified Data.Set            as Set
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
 import           MNML                (CompilerState (..),
-                                      QualifiedValueReference, varIdPlusPlus)
-import qualified MNML.AST            as AST
+                                      QualifiedValueReference)
+import qualified MNML.Constraint     as C
 import qualified MNML.Parse          as P
+import qualified MNML.SAST.Span      as SAST
+import qualified MNML.SAST.Type      as TAST
 import qualified MNML.Type           as T
 
 type Bindings = Map Text T.Type
 
-type PendingType = (QualifiedValueReference, T.Type, AST.SpanAnnotation)
+type PendingType = (QualifiedValueReference, T.Type, SAST.SourceSpan)
+
+type TypedValueDecl = (QualifiedValueReference, SAST.Expr)
 
 data ConstraintError
-  = UnknownConstructor Text -- AST.SourceSpan
-  | UnknownType Text -- AST.SourceSpan
+  = UnknownConstructor Text -- SAST.SourceSpan
+  | UnknownType Text -- SAST.SourceSpan
   | ParseError P.ParseError
   deriving (Eq, Show)
 
@@ -38,10 +42,11 @@ data ConstrainEnv
       , _errors       :: [ConstraintError]
       }
 
-type Constrain a = StateT ConstrainEnv (State CompilerState) a
+bindings :: Lens' ConstrainEnv Bindings
+bindings = lens _bindings (\us bin -> us {_bindings = bin})
 
-type SpanDecl = AST.Declaration AST.SpanAnnotation
-type SpanExpr = AST.Expr AST.SpanAnnotation
+pendingTypes :: Lens' ConstrainEnv [PendingType]
+pendingTypes = lens _pendingTypes (\us pt -> us {_pendingTypes = pt})
 
 initialEnv :: Text -> ConstrainEnv
 initialEnv modu =
@@ -52,64 +57,71 @@ initialEnv modu =
     , _errors = []
     }
 
-bindings :: Lens' ConstrainEnv Bindings
-bindings = lens _bindings (\us bin -> us {_bindings = bin})
+type Constrain a = StateT ConstrainEnv (State CompilerState) a
 
-pendingTypes :: Lens' ConstrainEnv [PendingType]
-pendingTypes = lens _pendingTypes (\us pt -> us {_pendingTypes = pt})
+-- Helpers
 
 addError :: ConstraintError -> Constrain ()
 addError err = modify (\s -> s {_errors = err : _errors s})
 
-giveUp :: ConstraintError -> Text -> Constrain (T.Type, [T.Constraint])
-giveUp err name = addError err >> (,[]) <$> freshTypeVar name []
+-- We need something like "typeable"->"typed"
+giveUp :: ConstraintError -> Text -> SAST.Expr -> Constrain (TAST.Expr, [C.Constraint])
+giveUp err name expr = do
+  _ <- addError err
+  tVar <- freshTypeVar name []
+  return (spanToSpanType tVar <$> expr, [])
 
-constrain :: SpanExpr -> Constrain (T.Type, [T.Constraint])
-constrain (AST.EVar name spanA) = do
+-- The real meat
+
+constrain :: SAST.Expr -> Constrain (TAST.Expr, [C.Constraint])
+constrain (SAST.EVar name spanA) = do
   lookupRes <- gets ((!? name) . _bindings)
   case lookupRes of
     -- The presence of a var doesn't inform it's type
-    Just t -> return (t, [])
+    Just t -> return (SAST.EVar name (spanToSpanType t spanA), [])
     Nothing -> do
       newTVar <- freshTypeVar name []
       modu <- gets _module
       modify (over pendingTypes (((modu, name), newTVar, spanA) :))
-      return (newTVar, [])
-constrain (AST.EConstructor name _spanA) = do
+      return (SAST.EVar name (spanToSpanType newTVar spanA), [])
+constrain cons@(SAST.EConstructor name spanA) = do
   modu <- gets _module
   expectedTypeRes <- constructorType modu name
   case expectedTypeRes of
-    Left err           -> giveUp err name
-    Right expectedType -> return (expectedType, [])
-constrain (AST.ELit lit _spanA) =
-  (,[]) <$> litType lit
-constrain (AST.ELambda args body spanA) = do
-  (argVars, bodyType, bodyConstraints) <- withNewScope $ do
+    Left err           -> giveUp err name cons
+    Right expectedType -> return (SAST.EConstructor name (spanToSpanType expectedType spanA), [])
+constrain (SAST.ELit l spanA) = do
+  lType <- litType l
+  return (SAST.ELit (spanToSpanType lType <$> l) (spanToSpanType lType spanA), [])
+constrain (SAST.ELambda args body spanA) = do
+  (argVars, body', bodyConstraints) <- withNewScope $ do
     argVars <- mapM declareVar args
-    (bt, bc) <- constrain body
-    return (argVars, bt, bc)
+    (body', bc) <- constrain body
+    return (argVars, body', bc)
   retType <- freshTypeVar "fun" []
-  return (retType, T.CEqual spanA retType (T.Fun argVars bodyType) : bodyConstraints)
-constrain (AST.EApp funExpr argExprs spanA) = do
-  (funType, fc) <- constrain funExpr
+  return (SAST.ELambda args body' (spanToSpanType retType spanA)
+         , C.CEqual spanA retType (T.Fun argVars (typeOf body')) : bodyConstraints)
+constrain (SAST.EApp funExpr argExprs spanA) = do
+  (funExpr', fc) <- constrain funExpr
   argResults <- mapM constrain argExprs
-  let argTypes = map fst argResults
+  let argExprs' = map fst argResults
       argConstraints = concatMap snd argResults
   retType <- freshTypeVar "ret" []
-  return (retType, T.CEqual spanA (T.Fun argTypes retType) funType : fc ++ argConstraints)
-constrain (AST.ECase subj branches spanA) = do
-  (subjType, subjConstraints) <- constrain subj
-  branchRes <- mapM constrainBranch branches
+  return ( SAST.EApp funExpr' argExprs' (spanToSpanType retType spanA)
+         , C.CEqual spanA (T.Fun (map typeOf argExprs') retType) (typeOf funExpr') : fc ++ argConstraints)
+constrain (SAST.ECase subj branches spanA) = do
+  (subj', subjConstraints) <- constrain subj
+  branches' <- mapM constrainBranch branches
   retType <- freshTypeVar "ret" []
-  let (patternRes, clauseRes) = unzip branchRes
+  let (patterns', clauseExprs') = unzip branches'
       -- The subject type will need to match every pattern
-      patternConstraints = map (T.CEqual spanA subjType . fst) patternRes
-      patternSubConstraints = concatMap snd patternRes
+      patternConstraints = map (C.CEqual spanA (typeOf subj') . typeOf . fst) patterns'
+      patternSubConstraints = concatMap snd patterns'
       -- Every clause type must match the return type of the case expression
-      clauseConstraints = map (T.CEqual spanA retType . fst) clauseRes
-      clauseSubConstraints = concatMap snd clauseRes
+      clauseConstraints = map (C.CEqual spanA retType . typeOf . fst) clauseExprs'
+      clauseSubConstraints = concatMap snd clauseExprs'
   return
-    ( retType
+    ( SAST.ECase subj' (map (bimap fst fst) branches') (spanToSpanType retType spanA)
     , concat
         [ patternConstraints
         , clauseConstraints
@@ -121,35 +133,37 @@ constrain (AST.ECase subj branches spanA) = do
   where
     constrainBranch (bPattern, bExpr) = withNewScope $ do
       patternConstraints <- constrainPattern bPattern
-      clauseConstraints <- constrain bExpr
-      return (patternConstraints, clauseConstraints)
-constrain (AST.EBinary _op left right spanA) = do
-  (lType, lConstraints) <- constrain left
-  (rType, rConstraints) <- constrain right
+      bExpr' <- constrain bExpr
+      return (patternConstraints, bExpr')
+constrain (SAST.EBinary op left right spanA) = do
+  (left', lConstraints) <- constrain left
+  (right', rConstraints) <- constrain right
   retVar <- freshTypeVar "ret" [T.Numeric]
-  let lConstraint = T.CEqual spanA retVar lType
-      rConstraint = T.CEqual spanA retVar rType
-  return (retVar, lConstraint : rConstraint : lConstraints ++ rConstraints)
-constrain (AST.ERecord fields spanA) = do
-  fieldResults <- mapM (constrain . snd) fields
-  let typedFields = zip (map fst fields) (map fst fieldResults)
-      fieldConstraints = concatMap snd fieldResults
+  let lConstraint = C.CEqual spanA retVar (typeOf left')
+      rConstraint = C.CEqual spanA retVar (typeOf right')
+  return ( SAST.EBinary op left' right' (spanToSpanType retVar spanA)
+         , lConstraint : rConstraint : lConstraints ++ rConstraints)
+constrain (SAST.ERecord fields spanA) = do
+  fieldVals' <- mapM (constrain . snd) fields
+  let fields' = zip (map fst fields) (map fst fieldVals')
+      fieldConstraints = concatMap snd fieldVals'
   retType <- freshTypeVar "ret" []
-  return (retType, T.CEqual spanA retType (T.Record (Map.fromList typedFields)) : fieldConstraints)
-constrain (AST.EList elems spanA) = do
+  return ( SAST.ERecord fields' (spanToSpanType retType spanA)
+         , C.CEqual spanA retType (T.Record (Map.fromList (map (second typeOf) fields'))) : fieldConstraints)
+constrain (SAST.EList elems spanA) = do
   elemResults <- mapM constrain elems
   elemType <- freshTypeVar "elem" []
   retType <- freshTypeVar "ret" []
-  let consistencyConstraints = map (T.CEqual spanA elemType . fst) elemResults
+  let consistencyConstraints = map (C.CEqual spanA elemType . typeOf . fst) elemResults
       elemConstraints = concatMap snd elemResults
-  return
-    (retType, T.CEqual spanA (T.List elemType) retType : consistencyConstraints ++ elemConstraints)
+  return ( SAST.EList (map fst elemResults) (spanToSpanType retType spanA)
+         , C.CEqual spanA (T.List elemType) retType : consistencyConstraints ++ elemConstraints)
 
 -- Create constraints based on patterns
-constrainPattern :: AST.Pattern AST.SpanAnnotation -> Constrain (T.Type, [T.Constraint])
-constrainPattern (AST.PVar t _) = (,[]) <$> declareVar t
-constrainPattern (AST.PDiscard _) = (,[]) <$> freshTypeVar "_" []
-constrainPattern (AST.PConstructor name argPatterns spanA) = do
+constrainPattern :: SpanPattern -> Constrain (SpanTypePattern, [C.Constraint])
+constrainPattern (SAST.PVar t spanA) = (,[]) . SAST.PVar t <$> liftA2 spanToSpanType (declareVar t) (pure spanA)
+constrainPattern (SAST.PDiscard spanA) = (,[]) . SAST.PDiscard <$> liftA2 spanToSpanType (freshTypeVar "_" []) (pure spanA)
+constrainPattern (SAST.PConstructor name argPatterns spanA) = do
   modu <- gets _module
   funTypeRes <- constructorType modu name
   case funTypeRes of
@@ -159,28 +173,28 @@ constrainPattern (AST.PConstructor name argPatterns spanA) = do
       argCons <- mapM constrainPattern argPatterns
       let argTypes = map fst argCons
           argSubCons = concatMap snd argCons
-      return (retType, T.CEqual spanA (T.Fun argTypes retType) funType : argSubCons)
+      return (retType, C.CEqual spanA (T.Fun argTypes retType) funType : argSubCons)
     Right retType -> return (retType, [])
-constrainPattern (AST.PRecord fieldSpec spanA) = do
+constrainPattern (SAST.PRecord fieldSpec spanA) = do
   (fieldTypes, fieldConstraints) <- foldM foldRecord ([], []) fieldSpec
   retType <- freshTypeVar "record" []
   partialRecordType <- freshPartialRecord (Map.fromList fieldTypes)
-  return (retType, T.CEqual spanA retType partialRecordType : fieldConstraints)
+  return (retType, C.CEqual spanA retType partialRecordType : fieldConstraints)
   where
     -- foldRecord ::
-    --   ([(Text, T.Type)], [T.Constraint]) ->
-    --   (Text, AST.Pattern ) ->
-    --   Constrain ([(Text, T.Type)], [T.Constraint])
+    --   ([(Text, T.Type)], [C.Constraint]) ->
+    --   (Text, SAST.Pattern ) ->
+    --   Constrain ([(Text, T.Type)], [C.Constraint])
     foldRecord (fields, fieldCons) (fieldName, fieldPattern) = do
       (fieldType, fieldSubCons) <- constrainPattern fieldPattern
       return ((fieldName, fieldType) : fields, fieldSubCons ++ fieldCons)
-constrainPattern (AST.PList elemPats spanA) = do
+constrainPattern (SAST.PList elemPats spanA) = do
   elemCons <- mapM constrainPattern elemPats
   elemType <- freshTypeVar "ret" []
-  let retCons = map (T.CEqual spanA elemType . fst) elemCons
+  let retCons = map (C.CEqual spanA elemType . fst) elemCons
       elemSubCons = concatMap snd elemCons
   return (elemType, retCons ++ elemSubCons)
-constrainPattern (AST.PLiteral lit _) = (,[]) <$> litType lit
+constrainPattern (SAST.PLiteral lit _) = (,[]) <$> litType lit
 
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
 freshTypeVar name traits = T.Var name (Set.fromList traits) <$> varIdPlusPlus
@@ -202,12 +216,12 @@ declareVar name = do
   modify (over bindings (Map.insert name newVarType))
   return newVarType
 
-litType :: AST.Literal AST.SpanAnnotation -> Constrain T.Type
+litType :: SAST.Literal -> Constrain T.Type
 -- For now, an "int" literal (e.g. "5") will be interpreted as "numeric type" (could be float)
-litType (AST.LInt _ _)    = freshTypeVar "num" [T.Numeric]
-litType (AST.LFloat _ _)  = return T.Float
-litType (AST.LChar _ _)   = return T.Char
-litType (AST.LString _ _) = return T.String
+litType (SAST.LInt _ _)    = freshTypeVar "num" [T.Numeric]
+litType (SAST.LFloat _ _)  = return T.Float
+litType (SAST.LChar _ _)   = return T.Char
+litType (SAST.LString _ _) = return T.String
 
 constructorType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
 constructorType modu conName = do
@@ -221,13 +235,13 @@ findConType decls conName =
   foldl (<>) (Left (UnknownConstructor conName))
     <$> mapM
       ( \case
-          (AST.TypeDecl tName constructors _) -> conTypeFromConstructors conName tName constructors
+          (SAST.TypeDecl tName constructors _) -> conTypeFromConstructors conName tName constructors
           _ -> return (Left (UnknownConstructor conName))
       )
       decls
 
 conTypeFromConstructors ::
-  Text -> Text -> [(Text, [AST.Type AST.SpanAnnotation])] -> Constrain (Either ConstraintError T.Type)
+  Text -> Text -> [(Text, [SAST.Type])] -> Constrain (Either ConstraintError T.Type)
 conTypeFromConstructors conName tName constructors = do
   foldl (<>) (Left (UnknownConstructor conName))
     <$> mapM
@@ -237,30 +251,30 @@ conTypeFromConstructors conName tName constructors = do
       )
       constructors
 
-typifyConstructor :: [AST.Type AST.SpanAnnotation] -> Text -> Constrain (Either ConstraintError T.Type)
+typifyConstructor :: [SAST.Type] -> Text -> Constrain (Either ConstraintError T.Type)
 typifyConstructor [] tName = return (Right (T.AlgebraicType tName))
 typifyConstructor argTypes tName = do
   typifiedTypes <- mapM typify argTypes
   return (T.Fun <$> sequence typifiedTypes <*> return (T.AlgebraicType tName))
 
-typify :: AST.Type AST.SpanAnnotation -> Constrain (Either ConstraintError T.Type)
-typify (AST.TInt _) = return (Right T.Int)
-typify (AST.TFloat _) = return (Right T.Float)
-typify (AST.TChar _) = return (Right T.Char)
-typify (AST.TString _) = return (Right T.String)
-typify (AST.TNamedType name _) = do
+typify :: SAST.Type -> Constrain (Either ConstraintError T.Type)
+typify (SAST.TInt _) = return (Right T.Int)
+typify (SAST.TFloat _) = return (Right T.Float)
+typify (SAST.TChar _) = return (Right T.Char)
+typify (SAST.TString _) = return (Right T.String)
+typify (SAST.TNamedType name _) = do
   modName <- gets _module
   moduleNamedType modName name
-typify (AST.TList t _) = (T.List <$>) <$> typify t
-typify (AST.TFun argTypes resType _) = do
+typify (SAST.TList t _) = (T.List <$>) <$> typify t
+typify (SAST.TFun argTypes resType _) = do
   maybeArgTypes <- mapM typify argTypes
   maybeResType <- typify resType
   return (T.Fun <$> sequence maybeArgTypes <*> maybeResType)
 -- There might be a more elegant way, not sure
-typify (AST.TRecord fields _) = do
-  fieldTypes <- mapM (\(fieldName, astType) -> ((fieldName,) <$>) <$> typify astType) fields
+typify (SAST.TRecord fields _) = do
+  fieldTypes <- mapM (\(fieldName, SAST.ype) -> ((fieldName,) <$>) <$> typify SAST.ype) fields
   return (T.Record . Map.fromList <$> sequence fieldTypes)
-typify (AST.TVar name _) = Right <$> freshTypeVar name []
+typify (SAST.TVar name _) = Right <$> freshTypeVar name []
 
 moduleNamedType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
 moduleNamedType modu typeName = do
@@ -274,25 +288,21 @@ moduleNamedType modu typeName = do
       foldl (<>) (Left (UnknownType typeName))
         <$> mapM
           ( \case
-              (AST.TypeDecl n _ _) | n == name -> return (Right (T.AlgebraicType n))
-              (AST.TypeAliasDecl n t _) | n == name -> (T.TypeAlias n <$>) <$> typify t
+              (SAST.TypeDecl n _ _) | n == name -> return (Right (T.AlgebraicType n))
+              (SAST.TypeAliasDecl n t _) | n == name -> (T.TypeAlias n <$>) <$> typify t
               _ -> return (Left (UnknownType typeName))
           )
           decls
 
-data SpanTypeAnnotation
-  = SpanTypeAnnotation T.Type AST.SourceSpan
-type TypedValueDecl = (QualifiedValueReference, AST.Expr SpanTypeAnnotation)
-
-valueConstraints :: QualifiedValueReference -> State CompilerState (Either [ConstraintError] ([TypedValueDecl], [T.Constraint]))
+valueConstraints :: QualifiedValueReference -> State CompilerState (Either [ConstraintError] ([TypedValueDecl], [C.Constraint]))
 valueConstraints qvr@(modu, _) = do
   res <$> runStateT (valueConstraints' qvr) (initialEnv modu)
   where
-    res :: (([TypedValueDecl], [T.Constraint]), ConstrainEnv) -> Either [ConstraintError] ([TypedValueDecl], [T.Constraint])
+    res :: (([TypedValueDecl], [C.Constraint]), ConstrainEnv) -> Either [ConstraintError] ([TypedValueDecl], [C.Constraint])
     res (t, ConstrainEnv {_errors = []})   = Right t
     res (_, ConstrainEnv {_errors = errs}) = Left errs
 
-valueConstraints' :: QualifiedValueReference -> Constrain ([TypedValueDecl], [T.Constraint])
+valueConstraints' :: QualifiedValueReference -> Constrain ([TypedValueDecl], [C.Constraint])
 valueConstraints' qvr@(modu, valName) = do
   def <- lift (P.valueDef qvr)
   case def of
@@ -302,13 +312,13 @@ valueConstraints' qvr@(modu, valName) = do
       pTypes <- gets _pendingTypes
       -- TODO: WARNING: This is a trick for circular references but *only works in the same module*
       modify (\s -> s {_bindings = Map.insert valName resT (_bindings s)})
-      foldM foldPendingType ([(qvr, (\(AST.SpanAnnotation s) -> SpanTypeAnnotation resT s) <$> expr)], cs) pTypes
+      foldM foldPendingType ([(qvr, (\(SpanAnnotation s) -> SpanTypeAnnotation resT s) <$> expr)], cs) pTypes
     Left err -> addError (ParseError err) $> ([], [])
   where
-    foldPendingType :: ([TypedValueDecl], [T.Constraint]) -> PendingType -> Constrain ([TypedValueDecl], [T.Constraint])
+    foldPendingType :: ([TypedValueDecl], [C.Constraint]) -> PendingType -> Constrain ([TypedValueDecl], [C.Constraint])
     foldPendingType (tvds, cs) (qvr', t, spanA) = do
       (tvds', cs') <- valueConstraints' qvr'
       case tvds' of
         []       -> return (tvds ++ tvds', cs ++ cs')
-        (_, e):_ -> let (SpanTypeAnnotation t' _) = AST.getAnno e
-                     in return (tvds ++ tvds', T.CEqual spanA t t' : cs ++ cs')
+        (_, e):_ -> let t' = typeOf e
+                     in return (tvds ++ tvds', C.CEqual spanA t t' : cs ++ cs')

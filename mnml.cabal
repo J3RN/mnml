@@ -26,8 +26,10 @@ source-repository head
 library
   exposed-modules:
       MNML
-      MNML.AST
+      MNML.AST.Span
+      MNML.AST.Type
       MNML.Constrain
+      MNML.Constraint
       MNML.Core
       MNML.Generate
       MNML.Parse
