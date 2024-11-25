@@ -4,7 +4,7 @@ module MNML.Constrain
     , valueConstraints
     ) where
 
-import           Control.Monad       (foldM)
+import           Control.Monad       (foldM, mapAndUnzipM)
 import           Control.Monad.State (State, StateT, gets, lift, modify,
                                       runStateT)
 import           Data.Bifunctor      (bimap, second)
@@ -15,18 +15,19 @@ import qualified Data.Set            as Set
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
 import           MNML                (CompilerState (..),
-                                      QualifiedValueReference)
+                                      QualifiedValueReference, varIdPlusPlus)
+import qualified MNML.AST.Span       as SAST
+import           MNML.AST.Type       (typeOf)
+import qualified MNML.AST.Type       as TAST
 import qualified MNML.Constraint     as C
 import qualified MNML.Parse          as P
-import qualified MNML.SAST.Span      as SAST
-import qualified MNML.SAST.Type      as TAST
 import qualified MNML.Type           as T
 
 type Bindings = Map Text T.Type
 
 type PendingType = (QualifiedValueReference, T.Type, SAST.SourceSpan)
 
-type TypedValueDecl = (QualifiedValueReference, SAST.Expr)
+type TypedValueDecl = (QualifiedValueReference, TAST.Expr)
 
 data ConstraintError
   = UnknownConstructor Text -- SAST.SourceSpan
@@ -61,15 +62,34 @@ type Constrain a = StateT ConstrainEnv (State CompilerState) a
 
 -- Helpers
 
+spanToSpanType :: SAST.SourceSpan -> T.Type -> TAST.SourceSpanType
+spanToSpanType (SAST.SourceSpan {_spanStart = s, _spanEnd = e}) t =
+  TAST.SourceSpanType
+    { _spanStart = s
+    , _spanEnd = e
+    , _type = t
+    }
+
+opToOp :: SAST.Operator -> TAST.Operator
+opToOp SAST.Add    = TAST.Add
+opToOp SAST.Sub    = TAST.Sub
+opToOp SAST.Mul    = TAST.Mul
+opToOp SAST.Div    = TAST.Div
+opToOp SAST.And    = TAST.And
+opToOp SAST.Or     = TAST.Or
+opToOp SAST.Equals = TAST.Equals
+
+litToLit :: SAST.Literal -> TAST.Literal
+litToLit (SAST.LInt int s)      = TAST.LInt int (spanToSpanType s T.Int)
+litToLit (SAST.LFloat double s) = TAST.LFloat double (spanToSpanType s T.Float)
+litToLit (SAST.LChar char s)    = TAST.LChar char (spanToSpanType s T.Char)
+litToLit (SAST.LString text s)  = TAST.LString text (spanToSpanType s T.String)
+
 addError :: ConstraintError -> Constrain ()
 addError err = modify (\s -> s {_errors = err : _errors s})
 
--- We need something like "typeable"->"typed"
-giveUp :: ConstraintError -> Text -> SAST.Expr -> Constrain (TAST.Expr, [C.Constraint])
-giveUp err name expr = do
-  _ <- addError err
-  tVar <- freshTypeVar name []
-  return (spanToSpanType tVar <$> expr, [])
+giveUp :: ConstraintError -> Text -> Constrain T.Type
+giveUp err name = addError err >> freshTypeVar name []
 
 -- The real meat
 
@@ -78,37 +98,43 @@ constrain (SAST.EVar name spanA) = do
   lookupRes <- gets ((!? name) . _bindings)
   case lookupRes of
     -- The presence of a var doesn't inform it's type
-    Just t -> return (SAST.EVar name (spanToSpanType t spanA), [])
+    Just t -> return (TAST.EVar name (spanToSpanType spanA t), [])
     Nothing -> do
       newTVar <- freshTypeVar name []
       modu <- gets _module
       modify (over pendingTypes (((modu, name), newTVar, spanA) :))
-      return (SAST.EVar name (spanToSpanType newTVar spanA), [])
-constrain cons@(SAST.EConstructor name spanA) = do
+      return (TAST.EVar name (spanToSpanType spanA newTVar), [])
+constrain (SAST.EConstructor name spanA) = do
   modu <- gets _module
   expectedTypeRes <- constructorType modu name
   case expectedTypeRes of
-    Left err           -> giveUp err name cons
-    Right expectedType -> return (SAST.EConstructor name (spanToSpanType expectedType spanA), [])
-constrain (SAST.ELit l spanA) = do
-  lType <- litType l
-  return (SAST.ELit (spanToSpanType lType <$> l) (spanToSpanType lType spanA), [])
+    Left err -> do
+      t <- giveUp err name
+      return (TAST.EConstructor name (spanToSpanType spanA t), [])
+    Right expectedType -> return (TAST.EConstructor name (spanToSpanType spanA expectedType), [])
+constrain (SAST.ELit lit spanA) =
+  let lit' = litToLit lit
+   in return (TAST.ELit lit' (spanToSpanType spanA (typeOf lit')), [])
 constrain (SAST.ELambda args body spanA) = do
   (argVars, body', bodyConstraints) <- withNewScope $ do
     argVars <- mapM declareVar args
     (body', bc) <- constrain body
     return (argVars, body', bc)
   retType <- freshTypeVar "fun" []
-  return (SAST.ELambda args body' (spanToSpanType retType spanA)
-         , C.CEqual spanA retType (T.Fun argVars (typeOf body')) : bodyConstraints)
+  return
+    ( TAST.ELambda args body' (spanToSpanType spanA retType)
+    , C.CEqual spanA retType (T.Fun argVars (typeOf body')) : bodyConstraints
+    )
 constrain (SAST.EApp funExpr argExprs spanA) = do
   (funExpr', fc) <- constrain funExpr
   argResults <- mapM constrain argExprs
   let argExprs' = map fst argResults
       argConstraints = concatMap snd argResults
   retType <- freshTypeVar "ret" []
-  return ( SAST.EApp funExpr' argExprs' (spanToSpanType retType spanA)
-         , C.CEqual spanA (T.Fun (map typeOf argExprs') retType) (typeOf funExpr') : fc ++ argConstraints)
+  return
+    ( TAST.EApp funExpr' argExprs' (spanToSpanType spanA retType)
+    , C.CEqual spanA (T.Fun (map typeOf argExprs') retType) (typeOf funExpr') : fc ++ argConstraints
+    )
 constrain (SAST.ECase subj branches spanA) = do
   (subj', subjConstraints) <- constrain subj
   branches' <- mapM constrainBranch branches
@@ -121,7 +147,7 @@ constrain (SAST.ECase subj branches spanA) = do
       clauseConstraints = map (C.CEqual spanA retType . typeOf . fst) clauseExprs'
       clauseSubConstraints = concatMap snd clauseExprs'
   return
-    ( SAST.ECase subj' (map (bimap fst fst) branches') (spanToSpanType retType spanA)
+    ( TAST.ECase subj' (map (bimap fst fst) branches') (spanToSpanType spanA retType)
     , concat
         [ patternConstraints
         , clauseConstraints
@@ -141,60 +167,76 @@ constrain (SAST.EBinary op left right spanA) = do
   retVar <- freshTypeVar "ret" [T.Numeric]
   let lConstraint = C.CEqual spanA retVar (typeOf left')
       rConstraint = C.CEqual spanA retVar (typeOf right')
-  return ( SAST.EBinary op left' right' (spanToSpanType retVar spanA)
-         , lConstraint : rConstraint : lConstraints ++ rConstraints)
+  return
+    ( TAST.EBinary (opToOp op) left' right' (spanToSpanType spanA retVar)
+    , lConstraint : rConstraint : lConstraints ++ rConstraints
+    )
 constrain (SAST.ERecord fields spanA) = do
   fieldVals' <- mapM (constrain . snd) fields
   let fields' = zip (map fst fields) (map fst fieldVals')
       fieldConstraints = concatMap snd fieldVals'
   retType <- freshTypeVar "ret" []
-  return ( SAST.ERecord fields' (spanToSpanType retType spanA)
-         , C.CEqual spanA retType (T.Record (Map.fromList (map (second typeOf) fields'))) : fieldConstraints)
+  return
+    ( TAST.ERecord fields' (spanToSpanType spanA retType)
+    , C.CEqual spanA retType (T.Record (Map.fromList (map (second typeOf) fields'))) : fieldConstraints
+    )
 constrain (SAST.EList elems spanA) = do
   elemResults <- mapM constrain elems
   elemType <- freshTypeVar "elem" []
   retType <- freshTypeVar "ret" []
   let consistencyConstraints = map (C.CEqual spanA elemType . typeOf . fst) elemResults
       elemConstraints = concatMap snd elemResults
-  return ( SAST.EList (map fst elemResults) (spanToSpanType retType spanA)
-         , C.CEqual spanA (T.List elemType) retType : consistencyConstraints ++ elemConstraints)
+  return
+    ( TAST.EList (map fst elemResults) (spanToSpanType spanA retType)
+    , C.CEqual spanA (T.List elemType) retType : consistencyConstraints ++ elemConstraints
+    )
 
 -- Create constraints based on patterns
-constrainPattern :: SpanPattern -> Constrain (SpanTypePattern, [C.Constraint])
-constrainPattern (SAST.PVar t spanA) = (,[]) . SAST.PVar t <$> liftA2 spanToSpanType (declareVar t) (pure spanA)
-constrainPattern (SAST.PDiscard spanA) = (,[]) . SAST.PDiscard <$> liftA2 spanToSpanType (freshTypeVar "_" []) (pure spanA)
+constrainPattern :: SAST.Pattern -> Constrain (TAST.Pattern, [C.Constraint])
+constrainPattern (SAST.PVar t spanA) = do
+  varType <- declareVar t
+  return (TAST.PVar t (spanToSpanType spanA varType), [])
+constrainPattern (SAST.PDiscard spanA) = do
+  varType <- freshTypeVar "_" []
+  return (TAST.PDiscard (spanToSpanType spanA varType), [])
 constrainPattern (SAST.PConstructor name argPatterns spanA) = do
   modu <- gets _module
+  argCons <- mapM constrainPattern argPatterns
+  let argPatterns' = map fst argCons
+      argSubCons = concatMap snd argCons
   funTypeRes <- constructorType modu name
-  case funTypeRes of
-    Left err -> giveUp err name
-    Right funType@(T.Fun _ _) -> do
-      retType <- freshTypeVar name []
-      argCons <- mapM constrainPattern argPatterns
-      let argTypes = map fst argCons
-          argSubCons = concatMap snd argCons
-      return (retType, C.CEqual spanA (T.Fun argTypes retType) funType : argSubCons)
-    Right retType -> return (retType, [])
+  (retType, cons) <-
+    case funTypeRes of
+      Left err -> (,[]) <$> giveUp err name
+      Right funType@(T.Fun _ _) -> do
+        retType <- freshTypeVar name []
+        return (retType, [C.CEqual spanA (T.Fun (map typeOf argPatterns') retType) funType])
+      Right t -> pure (t, [])
+  return (TAST.PConstructor name argPatterns' (spanToSpanType spanA retType), cons ++ argSubCons)
 constrainPattern (SAST.PRecord fieldSpec spanA) = do
-  (fieldTypes, fieldConstraints) <- foldM foldRecord ([], []) fieldSpec
+  (fieldSpec', fieldConstraints) <- foldM foldRecord ([], []) fieldSpec
   retType <- freshTypeVar "record" []
-  partialRecordType <- freshPartialRecord (Map.fromList fieldTypes)
-  return (retType, C.CEqual spanA retType partialRecordType : fieldConstraints)
+  partialRecordType <- freshPartialRecord (Map.fromList (map (second typeOf) fieldSpec'))
+  return
+    ( TAST.PRecord fieldSpec' (spanToSpanType spanA retType)
+    , C.CEqual spanA retType partialRecordType : fieldConstraints
+    )
   where
-    -- foldRecord ::
-    --   ([(Text, T.Type)], [C.Constraint]) ->
-    --   (Text, SAST.Pattern ) ->
-    --   Constrain ([(Text, T.Type)], [C.Constraint])
+    foldRecord ::
+      ([(Text, TAST.Pattern)], [C.Constraint]) ->
+      (Text, SAST.Pattern) ->
+      Constrain ([(Text, TAST.Pattern)], [C.Constraint])
     foldRecord (fields, fieldCons) (fieldName, fieldPattern) = do
-      (fieldType, fieldSubCons) <- constrainPattern fieldPattern
-      return ((fieldName, fieldType) : fields, fieldSubCons ++ fieldCons)
+      (field', fieldSubCons) <- constrainPattern fieldPattern
+      return ((fieldName, field') : fields, fieldSubCons ++ fieldCons)
 constrainPattern (SAST.PList elemPats spanA) = do
-  elemCons <- mapM constrainPattern elemPats
+  (elemPats', elemCons) <- mapAndUnzipM constrainPattern elemPats
   elemType <- freshTypeVar "ret" []
-  let retCons = map (C.CEqual spanA elemType . fst) elemCons
-      elemSubCons = concatMap snd elemCons
-  return (elemType, retCons ++ elemSubCons)
-constrainPattern (SAST.PLiteral lit _) = (,[]) <$> litType lit
+  let retCons = map (C.CEqual spanA elemType . typeOf) elemPats'
+  return (TAST.PList elemPats' (spanToSpanType spanA elemType), concat (retCons : elemCons))
+constrainPattern (SAST.PLiteral lit spanA) =
+  let lit' = litToLit lit
+   in return (TAST.PLiteral lit' (spanToSpanType spanA (typeOf lit')), [])
 
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
 freshTypeVar name traits = T.Var name (Set.fromList traits) <$> varIdPlusPlus
@@ -216,13 +258,6 @@ declareVar name = do
   modify (over bindings (Map.insert name newVarType))
   return newVarType
 
-litType :: SAST.Literal -> Constrain T.Type
--- For now, an "int" literal (e.g. "5") will be interpreted as "numeric type" (could be float)
-litType (SAST.LInt _ _)    = freshTypeVar "num" [T.Numeric]
-litType (SAST.LFloat _ _)  = return T.Float
-litType (SAST.LChar _ _)   = return T.Char
-litType (SAST.LString _ _) = return T.String
-
 constructorType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
 constructorType modu conName = do
   mDef <- lift (P.moduleDef modu)
@@ -230,7 +265,7 @@ constructorType modu conName = do
     Left err    -> return (Left (ParseError err))
     Right decls -> findConType decls conName
 
-findConType :: [SpanDecl] -> Text -> Constrain (Either ConstraintError T.Type)
+findConType :: [SAST.Declaration] -> Text -> Constrain (Either ConstraintError T.Type)
 findConType decls conName =
   foldl (<>) (Left (UnknownConstructor conName))
     <$> mapM
@@ -272,7 +307,7 @@ typify (SAST.TFun argTypes resType _) = do
   return (T.Fun <$> sequence maybeArgTypes <*> maybeResType)
 -- There might be a more elegant way, not sure
 typify (SAST.TRecord fields _) = do
-  fieldTypes <- mapM (\(fieldName, SAST.ype) -> ((fieldName,) <$>) <$> typify SAST.ype) fields
+  fieldTypes <- mapM (\(fieldName, t) -> ((fieldName,) <$>) <$> typify t) fields
   return (T.Record . Map.fromList <$> sequence fieldTypes)
 typify (SAST.TVar name _) = Right <$> freshTypeVar name []
 
@@ -283,7 +318,7 @@ moduleNamedType modu typeName = do
     Right mDef -> findDef typeName mDef
     Left _     -> return (Left (UnknownType typeName))
   where
-    findDef :: Text -> [SpanDecl] -> Constrain (Either ConstraintError T.Type)
+    findDef :: Text -> [SAST.Declaration] -> Constrain (Either ConstraintError T.Type)
     findDef name decls =
       foldl (<>) (Left (UnknownType typeName))
         <$> mapM
@@ -294,11 +329,15 @@ moduleNamedType modu typeName = do
           )
           decls
 
-valueConstraints :: QualifiedValueReference -> State CompilerState (Either [ConstraintError] ([TypedValueDecl], [C.Constraint]))
+valueConstraints ::
+  QualifiedValueReference ->
+  State CompilerState (Either [ConstraintError] ([TypedValueDecl], [C.Constraint]))
 valueConstraints qvr@(modu, _) = do
   res <$> runStateT (valueConstraints' qvr) (initialEnv modu)
   where
-    res :: (([TypedValueDecl], [C.Constraint]), ConstrainEnv) -> Either [ConstraintError] ([TypedValueDecl], [C.Constraint])
+    res ::
+      (([TypedValueDecl], [C.Constraint]), ConstrainEnv) ->
+      Either [ConstraintError] ([TypedValueDecl], [C.Constraint])
     res (t, ConstrainEnv {_errors = []})   = Right t
     res (_, ConstrainEnv {_errors = errs}) = Left errs
 
@@ -308,17 +347,19 @@ valueConstraints' qvr@(modu, valName) = do
   case def of
     Right expr -> do
       modify (\s -> s {_module = modu, _pendingTypes = []})
-      (resT, cs) <- constrain expr
+      (expr', cs) <- constrain expr
       pTypes <- gets _pendingTypes
       -- TODO: WARNING: This is a trick for circular references but *only works in the same module*
-      modify (\s -> s {_bindings = Map.insert valName resT (_bindings s)})
-      foldM foldPendingType ([(qvr, (\(SpanAnnotation s) -> SpanTypeAnnotation resT s) <$> expr)], cs) pTypes
+      modify (\s -> s {_bindings = Map.insert valName (typeOf expr') (_bindings s)})
+      foldM foldPendingType ([(qvr, expr')], cs) pTypes
     Left err -> addError (ParseError err) $> ([], [])
   where
-    foldPendingType :: ([TypedValueDecl], [C.Constraint]) -> PendingType -> Constrain ([TypedValueDecl], [C.Constraint])
+    foldPendingType ::
+      ([TypedValueDecl], [C.Constraint]) -> PendingType -> Constrain ([TypedValueDecl], [C.Constraint])
     foldPendingType (tvds, cs) (qvr', t, spanA) = do
       (tvds', cs') <- valueConstraints' qvr'
       case tvds' of
-        []       -> return (tvds ++ tvds', cs ++ cs')
-        (_, e):_ -> let t' = typeOf e
-                     in return (tvds ++ tvds', C.CEqual spanA t t' : cs ++ cs')
+        [] -> return (tvds ++ tvds', cs ++ cs')
+        (_, e) : _ ->
+          let t' = typeOf e
+           in return (tvds ++ tvds', C.CEqual spanA t t' : cs ++ cs')

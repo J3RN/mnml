@@ -2,9 +2,9 @@ module MNML.Constraint
     ( Constraint (..)
     ) where
 
-import qualified MNML.Annotation as Anno
-import qualified MNML.Type       as T
+import           MNML.AST.Span (SourceSpan)
+import           MNML.Type     (Type)
 
 data Constraint
-  = CEqual Anno.SpanAnnotation T.Type T.Type
+  = CEqual SourceSpan Type Type
   deriving (Eq, Show)

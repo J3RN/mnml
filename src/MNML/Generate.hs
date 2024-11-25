@@ -7,7 +7,7 @@ import           Data.Text           (Text)
 import qualified Data.Text           as Text
 import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState, QualifiedValueReference)
-import qualified MNML.AST            as AST
+import qualified MNML.AST.Type       as TAST
 import qualified MNML.Constrain      as C
 import qualified MNML.Core           as Core
 import qualified MNML.Type           as T
@@ -15,6 +15,7 @@ import qualified MNML.Unify          as Unify
 
 newtype GenerateError
   = UnificationError Unify.UnificationError
+  deriving (Eq, Show)
 
 newtype GenerateState
   = GenerateState { _modu :: Core.Module }
@@ -34,7 +35,7 @@ generate qvr = do
 
 generateValue :: GenerateState -> C.TypedValueDecl -> GenerateState
 -- A value being a var can only mean that it's a local reference
-generateValue state ((m, valName), AST.EVar name (C.SpanTypeAnnotation T.Int _)) =
+generateValue state ((m, valName), TAST.EVar name (TAST.SourceSpanType {_type = T.Int})) =
   let f =
         Core.Function
           { _params = []

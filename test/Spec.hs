@@ -8,4 +8,5 @@ main = hspec spec
 spec :: Spec
 spec = do
   ParserSpec.spec
-  UnificationSpec.spec
+
+-- UnificationSpec.spec

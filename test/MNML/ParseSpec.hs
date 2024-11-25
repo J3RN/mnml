@@ -8,12 +8,11 @@ import           Data.Bifunctor      (first)
 import qualified Data.Map            as Map
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
-import           MNML                (CompilerState (..), SourceSpan (..),
-                                      emptyState)
-import           MNML.AST
+import           MNML                (CompilerState (..), emptyState)
+import           MNML.AST.Span
 import           MNML.Parse
 import           Test.Hspec
-import           Text.Parsec         (sourceColumn)
+import           Text.Parsec         (sourceColumn, sourceLine)
 
 parse' :: Text -> (Either Text [Declaration], CompilerState)
 parse' source =
@@ -27,194 +26,156 @@ spec =
     describe "constructor" $ do
       it "parses constructor with no arguments" $ do
         let (ast, _cs) = parse' "main = None"
-        ast `shouldBe` Right [ValueDecl "main" (EConstructor "None" 1) 0]
-
-      it "tracks bare constructor span correctly" $ do
-        let (ast, cs) = parse' "main = None"
-            Right [ValueDecl _ (EConstructor "None" cId) _] = ast
-        shouldSpan cs cId 8 12
+        case ast of
+          Right [ValueDecl "main" cons@(EConstructor "None" _) _] -> shouldSpan cons (1, 8) (1, 12)
+          other -> unexpected other
 
       it "parses constructor with one argument" $ do
         let (ast, _cs) = parse' "main = Success({ body: \"hello world!\"})"
-        ast
-          `shouldBe` Right
+        case ast of
+          Right
             [ ValueDecl
                 "main"
-                (EApp (EConstructor "Success" 1) [ERecord [("body", ELit (LString "hello world!" 4) 3)] 2] 5)
-                0
-            ]
-
-      it "tracks constructor with one argument spans correctly" $ do
-        let (ast, cs) = parse' "main = Success({ body: \"hello world!\"})"
-            Right
-              [ ValueDecl
-                  _
-                  (EApp (EConstructor "Success" cId) [ERecord [("body", ELit (LString "hello world!" _) _)] _] appId)
-                  _
-                ] = ast
-        shouldSpan cs appId 8 40
-        shouldSpan cs cId 8 15
+                app@( EApp
+                        cons@(EConstructor "Success" _)
+                        [ERecord [("body", ELit (LString "hello world!" _) _)] _]
+                        _
+                      )
+                _
+              ] -> shouldSpan app (1, 8) (1, 40) >> shouldSpan cons (1, 8) (1, 15)
+          other -> unexpected other
 
       it "parses constructor with multiple arguments" $ do
         let (ast, _cs) = parse' "main = BinOp(1, '*', 2)"
-        ast
-          `shouldBe` Right
+        case ast of
+          Right
             [ ValueDecl
                 "main"
-                (EApp (EConstructor "BinOp" 1) [ELit (LInt 1 3) 2, ELit (LChar '*' 5) 4, ELit (LInt 2 7) 6] 8)
-                0
-            ]
-
-      it "tracks constructor with multiple arguments spans correctly" $ do
-        let (ast, cs) = parse' "main =  BinOp(1, '*', 2)"
-            Right
-              [ ValueDecl
-                  "main"
-                  (EApp (EConstructor "BinOp" cId) [ELit (LInt 1 _) _, ELit (LChar '*' _) _, ELit (LInt 2 _) _] appId)
-                  _
-                ] = ast
-        shouldSpan cs appId 9 25
-        shouldSpan cs cId 9 14
+                app@(EApp cons@(EConstructor "BinOp" _) [ELit (LInt 1 _) _, ELit (LChar '*' _) _, ELit (LInt 2 _) _] _)
+                _
+              ] -> shouldSpan app (1, 8) (1, 24) >> shouldSpan cons (1, 8) (1, 13)
+          other -> unexpected other
 
     describe "records" $ do
       it "parses single" $ do
         let (ast, _cs) = parse' "main = {name: \"Jon\"}"
-        ast `shouldBe` Right [ValueDecl "main" (ERecord [("name", ELit (LString "Jon" 3) 2)] 1) 0]
-
-      it "tracks single-item spans correctly" $ do
-        let (ast, cs) = parse' "main = {name: \"Jon\"}"
-            Right [ValueDecl "main" (ERecord [("name", ELit (LString "Jon" _) _)] recId) _] = ast
-        shouldSpan cs recId 8 21
+        case ast of
+          Right [ValueDecl "main" rec@(ERecord [("name", ELit (LString "Jon" _) _)] _) _] -> shouldSpan rec (1, 8) (1, 21)
+          other -> unexpected other
 
       it "parses two" $ do
         let (ast, _cs) = parse' "main =  {name: \"Jon\", age: 30}"
-        ast
-          `shouldBe` Right
-            [ValueDecl "main" (ERecord [("name", ELit (LString "Jon" 3) 2), ("age", ELit (LInt 30 5) 4)] 1) 0]
-
-      it "tracks single-item spans correctly" $ do
-        let (ast, cs) = parse' "main =  {name: \"Jon\", age: 30}"
-            Right [ValueDecl "main" (ERecord [("name", _), ("age", _)] recId) _] = ast
-        shouldSpan cs recId 9 31
+        case ast of
+          Right
+            [ ValueDecl "main" rec@(ERecord [("name", ELit (LString "Jon" _) _), ("age", ELit (LInt 30 _) _)] _) _
+              ] -> shouldSpan rec (1, 9) (1, 31)
+          other -> unexpected other
 
     describe "case" $ do
       it "handles constructors" $ do
         let (ast, _cs) = parse' (Text.unlines ["main = case foo of", "Just(n) -> n", "None -> 5"])
-        ast
-          `shouldBe` Right
+        case ast of
+          Right
             [ ValueDecl
                 "main"
-                ( ECase
-                    (EVar "foo" 2)
-                    [ (PConstructor "Just" [PVar "n" 4] 3, EVar "n" 5)
-                    , (PConstructor "None" [] 6, ELit (LInt 5 8) 7)
-                    ]
-                    1
-                )
-                0
-            ]
+                c@( ECase
+                      (EVar "foo" _)
+                      [ (PConstructor "Just" [PVar "n" _] _, EVar "n" _)
+                        , (PConstructor "None" [] _, ELit (LInt 5 _) _)
+                        ]
+                      _
+                    )
+                _
+              ] -> shouldSpan c (1, 8) (4, 1) -- A bit odd but I'm not questioning it
+          other -> unexpected other
 
     describe "binary expressions" $ do
       it "parses addition" $ do
         let (ast, _cs) = parse' "main = 5 + 3"
-        ast
-          `shouldBe` Right [ValueDecl "main" (EBinary (Add 4) (ELit (LInt 5 2) 1) (ELit (LInt 3 6) 5) 3) 0]
-
-      it "tracks addition expression span correctly" $ do
-        let (ast, cs) = parse' "main = 5 + 3"
-            (Right [ValueDecl _ (EBinary (Add _) _ _ exprId) _]) = ast
-        shouldSpan cs exprId 8 13
+        case ast of
+          Right [ValueDecl "main" bin@(EBinary (Add) (ELit (LInt 5 _) _) (ELit (LInt 3 _) _) _) _] -> shouldSpan bin (1, 8) (1, 13)
+          other -> unexpected other
 
       it "does left association" $ do
         let (ast, _cs) = parse' "main = 1 + 2 + 3"
-        ast
-          `shouldBe` Right
+        case ast of
+          Right
             [ ValueDecl
                 "main"
-                (EBinary (Add 8) (EBinary (Add 4) (ELit (LInt 1 2) 1) (ELit (LInt 2 6) 5) 3) (ELit (LInt 3 10) 9) 7)
-                0
-            ]
-
-      it "tracks left association spans correctly" $ do
-        let (ast, cs) = parse' "main = 1 + 2 + 3"
-            (Right [ValueDecl _ (EBinary (Add _) (EBinary (Add _) _ _ innerId) _ outerId) _]) = ast
-        shouldSpan cs outerId 8 17
-        shouldSpan cs innerId 8 14
+                outer@(EBinary Add inner@(EBinary Add (ELit (LInt 1 _) _) (ELit (LInt 2 _) _) _) (ELit (LInt 3 _) _) _)
+                _
+              ] -> shouldSpan outer (1, 8) (1, 17) >> shouldSpan inner (1, 8) (1, 14)
+          other -> unexpected other
 
       it "parses parens correctly" $ do
         let (ast, _cs) = parse' "main = (5 + 3) * 3 == 20 + 4"
-        ast
-          `shouldBe` Right
+        case ast of
+          Right
             [ ValueDecl
                 "main"
-                ( EBinary
-                    (Equals 12)
-                    (EBinary (Mul 8) (EBinary (Add 4) (ELit (LInt 5 2) 1) (ELit (LInt 3 6) 5) 3) (ELit (LInt 3 10) 9) 7)
-                    (EBinary (Add 16) (ELit (LInt 20 14) 13) (ELit (LInt 4 18) 17) 15)
-                    11
-                )
-                0
-            ]
-
-      it "tracks paren spans correctly" $ do
-        let (ast, cs) = parse' "main = (5 + 3) * 3 == 20 + 4"
-            ( Right
-                [ ValueDecl
-                    _
-                    ( EBinary
-                        (Equals _)
-                        (EBinary (Mul _) (EBinary (Add _) _ _ lAddId) _ mulId)
-                        (EBinary (Add _) _ _ rAddId)
-                        eqId
-                      )
-                    _
-                  ]
-              ) = ast
-        shouldSpan cs eqId 8 29
-        shouldSpan cs mulId 8 20
-        shouldSpan cs lAddId 9 14
-        shouldSpan cs rAddId 23 29
+                eq@( EBinary
+                      Equals
+                      mul@(EBinary Mul lAdd@(EBinary Add (ELit (LInt 5 _) _) (ELit (LInt 3 _) _) _) (ELit (LInt 3 _) _) _)
+                      rAdd@(EBinary Add (ELit (LInt 20 _) _) (ELit (LInt 4 _) _) _)
+                      _
+                    )
+                _
+              ] ->
+              shouldSpan eq (1, 8) (1, 29)
+                >> shouldSpan mul (1, 8) (1, 20)
+                >> shouldSpan lAdd (1, 9) (1, 14)
+                >> shouldSpan rAdd (1, 23) (1, 29)
+          other -> unexpected other
 
     describe "function application" $ do
       it "handles single application" $ do
         let (ast, _cs) = parse' "main = foo(1)"
-        ast `shouldBe` Right [ValueDecl "main" (EApp (EVar "foo" 1) [ELit (LInt 1 3) 2] 4) 0]
-
-      it "tracks single application spans correctly" $ do
-        let (ast, cs) = parse' "main = foo(1)"
-            (Right [ValueDecl _ (EApp (EVar "foo" _) _args appId) _]) = ast
-        shouldSpan cs appId 8 14
+        case ast of
+          Right [ValueDecl "main" app@(EApp (EVar "foo" _) [ELit (LInt 1 _) _] _) _] -> shouldSpan app (1, 8) (1, 14)
+          other -> unexpected other
 
       it "handles chained applications" $ do
         let (ast, _cs) = parse' "main = foo(1)(2)"
-        ast
-          `shouldBe` Right [ValueDecl "main" (EApp (EApp (EVar "foo" 1) [ELit (LInt 1 3) 2] 6) [ELit (LInt 2 5) 4] 7) 0]
-
-      it "tracks chained application spans correctly" $ do
-        let (ast, cs) = parse' "main = foo(1)(2)"
-            (Right [ValueDecl _ (EApp (EApp (EVar "foo" _) _ _) _ appId) _]) = ast
-        shouldSpan cs appId 8 17
+        case ast of
+          Right
+            [ ValueDecl
+                "main"
+                outer@(EApp inner@(EApp (EVar "foo" _) [ELit (LInt 1 _) _] _) [ELit (LInt 2 _) _] _)
+                _
+              ] ->
+            shouldSpan inner (1, 8) (1, 14)
+              >> shouldSpan outer (1, 8) (1, 17)
+          other -> unexpected other
 
     describe "list literals" $ do
       it "handles empty list" $ do
         let (ast, _cs) = parse' "main = []"
-        ast `shouldBe` Right [ValueDecl "main" (EList [] 1) 0]
+        case ast of
+          Right [ValueDecl "main" list@(EList [] _) _] -> shouldSpan list (1, 8) (1, 10)
+          other -> unexpected other
 
       it "handles singleton list" $ do
         let (ast, _cs) = parse' "main = [3.14]"
-        ast `shouldBe` Right [ValueDecl "main" (EList [ELit (LFloat 3.14 3) 2] 1) 0]
+        case ast of
+          Right [ValueDecl "main" list@(EList [ELit (LFloat 3.14 _) _] _) _] -> shouldSpan list (1, 8) (1, 14)
+          other -> unexpected other
 
       it "handles multiple list" $ do
         let (ast, _cs) = parse' "main = [3.14, 2.72]"
-        ast `shouldBe` Right [ValueDecl "main" (EList [ELit (LFloat 3.14 3) 2, ELit (LFloat 2.72 5) 4] 1) 0]
+        case ast of
+          Right [ValueDecl "main" list@(EList [ELit (LFloat 3.14 _) _, ELit (LFloat 2.72 _) _] _) _] -> shouldSpan list (1, 8) (1, 20)
+          other -> unexpected other
 
 -- Custom expectation for spans
 
-shouldSpan :: (HasCallStack) => CompilerState -> NodeId -> Int -> Int -> Expectation
-shouldSpan (CompilerState {_spans = spans}) nodeId beg end =
-  let (SourceSpan sBeg sEnd) = spans Map.! nodeId
-      actualBeg = sourceColumn sBeg
-      actualEnd = sourceColumn sEnd
+unexpected :: (Show a) => a -> Expectation
+unexpected node = expectationFailure $ "Did not expect " <> (show node)
+
+shouldSpan :: (HasCallStack, Spanned a) => a -> (Int, Int) -> (Int, Int) -> Expectation
+shouldSpan node beg end =
+  let (sBeg, sEnd) = (spanOf node)
+      actualBeg = (sourceLine sBeg, sourceColumn sBeg)
+      actualEnd = (sourceLine sEnd, sourceColumn sEnd)
    in unless
         (actualBeg == beg && actualEnd == end)
         ( expectationFailure

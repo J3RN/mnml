@@ -5,6 +5,7 @@ module MNML.AST.Span
     , Operator (..)
     , Pattern (..)
     , SourceSpan (..)
+    , Spanned (..)
     , Type (..)
     ) where
 
@@ -66,3 +67,47 @@ data Type
   | TRecord [(Text, Type)] SourceSpan -- [("name", TString), ...]
   | TVar Text SourceSpan -- "a"
   deriving (Eq, Show)
+
+class Spanned a where
+  spanOf :: a -> (SourcePos, SourcePos)
+
+instance Spanned Declaration where
+  spanOf (TypeDecl _ _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (TypeAliasDecl _ _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (ValueDecl _ _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
+
+instance Spanned Expr where
+  spanOf (EVar _ (SourceSpan {_spanStart = s, _spanEnd = e}))         = (s, e)
+  spanOf (EConstructor _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (ELit _ (SourceSpan {_spanStart = s, _spanEnd = e}))         = (s, e)
+  spanOf (ELambda _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))    = (s, e)
+  spanOf (EApp _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))       = (s, e)
+  spanOf (ECase _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))      = (s, e)
+  spanOf (EBinary _ _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))  = (s, e)
+  spanOf (ERecord _ (SourceSpan {_spanStart = s, _spanEnd = e}))      = (s, e)
+  spanOf (EList _ (SourceSpan {_spanStart = s, _spanEnd = e}))        = (s, e)
+
+instance Spanned Literal where
+  spanOf (LInt _ (SourceSpan {_spanStart = s, _spanEnd = e}))    = (s, e)
+  spanOf (LFloat _ (SourceSpan {_spanStart = s, _spanEnd = e}))  = (s, e)
+  spanOf (LChar _ (SourceSpan {_spanStart = s, _spanEnd = e}))   = (s, e)
+  spanOf (LString _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
+
+instance Spanned Pattern where
+  spanOf (PVar _ (SourceSpan {_spanStart = s, _spanEnd = e}))           = (s, e)
+  spanOf (PDiscard (SourceSpan {_spanStart = s, _spanEnd = e}))         = (s, e)
+  spanOf (PConstructor _ _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (PRecord _ (SourceSpan {_spanStart = s, _spanEnd = e}))        = (s, e)
+  spanOf (PList _ (SourceSpan {_spanStart = s, _spanEnd = e}))          = (s, e)
+  spanOf (PLiteral _ (SourceSpan {_spanStart = s, _spanEnd = e}))       = (s, e)
+
+instance Spanned Type where
+  spanOf (TInt (SourceSpan {_spanStart = s, _spanEnd = e}))         = (s, e)
+  spanOf (TFloat (SourceSpan {_spanStart = s, _spanEnd = e}))       = (s, e)
+  spanOf (TChar (SourceSpan {_spanStart = s, _spanEnd = e}))        = (s, e)
+  spanOf (TString (SourceSpan {_spanStart = s, _spanEnd = e}))      = (s, e)
+  spanOf (TNamedType _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (TList _ (SourceSpan {_spanStart = s, _spanEnd = e}))      = (s, e)
+  spanOf (TFun _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))     = (s, e)
+  spanOf (TRecord _ (SourceSpan {_spanStart = s, _spanEnd = e}))    = (s, e)
+  spanOf (TVar _ (SourceSpan {_spanStart = s, _spanEnd = e}))       = (s, e)

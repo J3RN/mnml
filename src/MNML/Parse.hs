@@ -257,8 +257,8 @@ captureChainl1 p op =
         f <- op
         rhs <- p
         end <- getPosition
-        let res = f lhs rhs (SourceSpan start end)
-         in rest start res <|> return res
+        let res = f lhs rhs (SourceSpan start end) in rest start res
+        <|> return lhs
 
 listExpr :: Parser Expr
 listExpr = do

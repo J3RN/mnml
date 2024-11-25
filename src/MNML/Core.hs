@@ -5,13 +5,13 @@ module MNML.Core
     , Memory (..)
     , Module (..)
     , Type (..)
-    , memories
     , functions
+    , memories
     ) where
 
-import           Data.List (intercalate)
-import           Data.Text (Text, unpack)
-import Lens.Micro (Lens', lens)
+import           Data.List  (intercalate)
+import           Data.Text  (Text, unpack)
+import           Lens.Micro (Lens', lens)
 
 newtype Funcref
   = Funcref Text
@@ -46,10 +46,10 @@ data Module
       }
 
 memories :: Lens' Module [Memory]
-memories = lens _memories (\modu mems -> modu { _memories = mems})
+memories = lens _memories (\modu mems -> modu {_memories = mems})
 
 functions :: Lens' Module [Function]
-functions = lens _functions (\modu funs -> modu { _functions = funs})
+functions = lens _functions (\modu funs -> modu {_functions = funs})
 
 instance Show Expr where
   show e = concat ["(", unpack (_callee e), " ", unwords (map showArg (_args e)), ")"]

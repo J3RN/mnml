@@ -17,8 +17,7 @@ import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, (^.))
-import qualified MNML.Annotation     as Anno
-import qualified MNML.AST            as AST
+import qualified MNML.AST.Span       as SAST
 import qualified MNML.Constraint     as C
 import qualified MNML.Type           as T
 
@@ -28,9 +27,9 @@ type QualifiedValueReference = (Text, Text)
 
 type Modules = Map Text Text
 
-type ModuleDefCache = Map Text [AST.Declaration Anno.SpanAnnotation]
+type ModuleDefCache = Map Text [SAST.Declaration]
 
-type ValueDefCache = Map QualifiedValueReference (AST.Expr Anno.SpanAnnotation)
+type ValueDefCache = Map QualifiedValueReference SAST.Expr
 
 type ValueConstraintsCache = Map QualifiedValueReference (T.Type, [C.Constraint])
 
