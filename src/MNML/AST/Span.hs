@@ -69,45 +69,45 @@ data Type
   deriving (Eq, Show)
 
 class Spanned a where
-  spanOf :: a -> (SourcePos, SourcePos)
+  spanOf :: a -> SourceSpan
 
 instance Spanned Declaration where
-  spanOf (TypeDecl _ _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (TypeAliasDecl _ _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (ValueDecl _ _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (TypeDecl _ _ s)      = s
+  spanOf (TypeAliasDecl _ _ s) = s
+  spanOf (ValueDecl _ _ s)     = s
 
 instance Spanned Expr where
-  spanOf (EVar _ (SourceSpan {_spanStart = s, _spanEnd = e}))         = (s, e)
-  spanOf (EConstructor _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (ELit _ (SourceSpan {_spanStart = s, _spanEnd = e}))         = (s, e)
-  spanOf (ELambda _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))    = (s, e)
-  spanOf (EApp _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))       = (s, e)
-  spanOf (ECase _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))      = (s, e)
-  spanOf (EBinary _ _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))  = (s, e)
-  spanOf (ERecord _ (SourceSpan {_spanStart = s, _spanEnd = e}))      = (s, e)
-  spanOf (EList _ (SourceSpan {_spanStart = s, _spanEnd = e}))        = (s, e)
+  spanOf (EVar _ s)         = s
+  spanOf (EConstructor _ s) = s
+  spanOf (ELit _ s)         = s
+  spanOf (ELambda _ _ s)    = s
+  spanOf (EApp _ _ s)       = s
+  spanOf (ECase _ _ s)      = s
+  spanOf (EBinary _ _ _ s)  = s
+  spanOf (ERecord _ s)      = s
+  spanOf (EList _ s)        = s
 
 instance Spanned Literal where
-  spanOf (LInt _ (SourceSpan {_spanStart = s, _spanEnd = e}))    = (s, e)
-  spanOf (LFloat _ (SourceSpan {_spanStart = s, _spanEnd = e}))  = (s, e)
-  spanOf (LChar _ (SourceSpan {_spanStart = s, _spanEnd = e}))   = (s, e)
-  spanOf (LString _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (LInt _ s)    = s
+  spanOf (LFloat _ s)  = s
+  spanOf (LChar _ s)   = s
+  spanOf (LString _ s) = s
 
 instance Spanned Pattern where
-  spanOf (PVar _ (SourceSpan {_spanStart = s, _spanEnd = e}))           = (s, e)
-  spanOf (PDiscard (SourceSpan {_spanStart = s, _spanEnd = e}))         = (s, e)
-  spanOf (PConstructor _ _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (PRecord _ (SourceSpan {_spanStart = s, _spanEnd = e}))        = (s, e)
-  spanOf (PList _ (SourceSpan {_spanStart = s, _spanEnd = e}))          = (s, e)
-  spanOf (PLiteral _ (SourceSpan {_spanStart = s, _spanEnd = e}))       = (s, e)
+  spanOf (PVar _ s)           = s
+  spanOf (PDiscard s)         = s
+  spanOf (PConstructor _ _ s) = s
+  spanOf (PRecord _ s)        = s
+  spanOf (PList _ s)          = s
+  spanOf (PLiteral _ s)       = s
 
 instance Spanned Type where
-  spanOf (TInt (SourceSpan {_spanStart = s, _spanEnd = e}))         = (s, e)
-  spanOf (TFloat (SourceSpan {_spanStart = s, _spanEnd = e}))       = (s, e)
-  spanOf (TChar (SourceSpan {_spanStart = s, _spanEnd = e}))        = (s, e)
-  spanOf (TString (SourceSpan {_spanStart = s, _spanEnd = e}))      = (s, e)
-  spanOf (TNamedType _ (SourceSpan {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (TList _ (SourceSpan {_spanStart = s, _spanEnd = e}))      = (s, e)
-  spanOf (TFun _ _ (SourceSpan {_spanStart = s, _spanEnd = e}))     = (s, e)
-  spanOf (TRecord _ (SourceSpan {_spanStart = s, _spanEnd = e}))    = (s, e)
-  spanOf (TVar _ (SourceSpan {_spanStart = s, _spanEnd = e}))       = (s, e)
+  spanOf (TInt s)         = s
+  spanOf (TFloat s)       = s
+  spanOf (TChar s)        = s
+  spanOf (TString s)      = s
+  spanOf (TNamedType _ s) = s
+  spanOf (TList _ s)      = s
+  spanOf (TFun _ _ s)     = s
+  spanOf (TRecord _ s)    = s
+  spanOf (TVar _ s)       = s

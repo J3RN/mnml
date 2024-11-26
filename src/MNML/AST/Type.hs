@@ -7,10 +7,11 @@ module MNML.AST.Type
     , SourceSpanType (..)
     , Type (..)
     , Typed (..)
+    , sourceSpanTypeToSourceSpan
     ) where
 
 import           Data.Text     (Text)
-import           MNML.AST.Span (Spanned (..))
+import           MNML.AST.Span (SourceSpan (..), Spanned (..))
 import qualified MNML.Type     as T
 import           Text.Parsec   (SourcePos)
 
@@ -71,6 +72,9 @@ data Type
   | TVar Text SourceSpanType -- "a"
   deriving (Eq, Show)
 
+sourceSpanTypeToSourceSpan :: SourceSpanType -> SourceSpan
+sourceSpanTypeToSourceSpan (SourceSpanType {_spanStart = s, _spanEnd = e}) = SourceSpan {_spanStart = s, _spanEnd = e}
+
 class Typed a where
   typeOf :: a -> T.Type
 
@@ -80,9 +84,9 @@ instance Typed Declaration where
   typeOf (ValueDecl _ _ (SourceSpanType {_type = t}))     = t
 
 instance Spanned Declaration where
-  spanOf (TypeDecl _ _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (TypeAliasDecl _ _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (ValueDecl _ _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (TypeDecl _ _ s)      = sourceSpanTypeToSourceSpan s
+  spanOf (TypeAliasDecl _ _ s) = sourceSpanTypeToSourceSpan s
+  spanOf (ValueDecl _ _ s)     = sourceSpanTypeToSourceSpan s
 
 instance Typed Expr where
   typeOf (EVar _ (SourceSpanType {_type = t}))         = t
@@ -96,15 +100,15 @@ instance Typed Expr where
   typeOf (EList _ (SourceSpanType {_type = t}))        = t
 
 instance Spanned Expr where
-  spanOf (EVar _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (EConstructor _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (ELit _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (ELambda _ _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (EApp _ _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (ECase _ _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (EBinary _ _ _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (ERecord _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (EList _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (EVar _ s)         = sourceSpanTypeToSourceSpan s
+  spanOf (EConstructor _ s) = sourceSpanTypeToSourceSpan s
+  spanOf (ELit _ s)         = sourceSpanTypeToSourceSpan s
+  spanOf (ELambda _ _ s)    = sourceSpanTypeToSourceSpan s
+  spanOf (EApp _ _ s)       = sourceSpanTypeToSourceSpan s
+  spanOf (ECase _ _ s)      = sourceSpanTypeToSourceSpan s
+  spanOf (EBinary _ _ _ s)  = sourceSpanTypeToSourceSpan s
+  spanOf (ERecord _ s)      = sourceSpanTypeToSourceSpan s
+  spanOf (EList _ s)        = sourceSpanTypeToSourceSpan s
 
 instance Typed Literal where
   typeOf (LInt _ (SourceSpanType {_type = t}))    = t
@@ -113,10 +117,10 @@ instance Typed Literal where
   typeOf (LString _ (SourceSpanType {_type = t})) = t
 
 instance Spanned Literal where
-  spanOf (LInt _ (SourceSpanType {_spanStart = s, _spanEnd = e}))    = (s, e)
-  spanOf (LFloat _ (SourceSpanType {_spanStart = s, _spanEnd = e}))  = (s, e)
-  spanOf (LChar _ (SourceSpanType {_spanStart = s, _spanEnd = e}))   = (s, e)
-  spanOf (LString _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (LInt _ s)    = sourceSpanTypeToSourceSpan s
+  spanOf (LFloat _ s)  = sourceSpanTypeToSourceSpan s
+  spanOf (LChar _ s)   = sourceSpanTypeToSourceSpan s
+  spanOf (LString _ s) = sourceSpanTypeToSourceSpan s
 
 instance Typed Pattern where
   typeOf (PVar _ (SourceSpanType {_type = t}))           = t
@@ -127,12 +131,12 @@ instance Typed Pattern where
   typeOf (PLiteral _ (SourceSpanType {_type = t}))       = t
 
 instance Spanned Pattern where
-  spanOf (PVar _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (PDiscard (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (PConstructor _ _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (PRecord _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (PList _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (PLiteral _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
+  spanOf (PVar _ s)           = sourceSpanTypeToSourceSpan s
+  spanOf (PDiscard s)         = sourceSpanTypeToSourceSpan s
+  spanOf (PConstructor _ _ s) = sourceSpanTypeToSourceSpan s
+  spanOf (PRecord _ s)        = sourceSpanTypeToSourceSpan s
+  spanOf (PList _ s)          = sourceSpanTypeToSourceSpan s
+  spanOf (PLiteral _ s)       = sourceSpanTypeToSourceSpan s
 
 -- Haha
 instance Typed Type where
@@ -147,12 +151,12 @@ instance Typed Type where
   typeOf (TVar _ (SourceSpanType {_type = t}))       = t
 
 instance Spanned Type where
-  spanOf (TInt (SourceSpanType {_spanStart = s, _spanEnd = e}))         = (s, e)
-  spanOf (TFloat (SourceSpanType {_spanStart = s, _spanEnd = e}))       = (s, e)
-  spanOf (TChar (SourceSpanType {_spanStart = s, _spanEnd = e}))        = (s, e)
-  spanOf (TString (SourceSpanType {_spanStart = s, _spanEnd = e}))      = (s, e)
-  spanOf (TNamedType _ (SourceSpanType {_spanStart = s, _spanEnd = e})) = (s, e)
-  spanOf (TList _ (SourceSpanType {_spanStart = s, _spanEnd = e}))      = (s, e)
-  spanOf (TFun _ _ (SourceSpanType {_spanStart = s, _spanEnd = e}))     = (s, e)
-  spanOf (TRecord _ (SourceSpanType {_spanStart = s, _spanEnd = e}))    = (s, e)
-  spanOf (TVar _ (SourceSpanType {_spanStart = s, _spanEnd = e}))       = (s, e)
+  spanOf (TInt s)         = sourceSpanTypeToSourceSpan s
+  spanOf (TFloat s)       = sourceSpanTypeToSourceSpan s
+  spanOf (TChar s)        = sourceSpanTypeToSourceSpan s
+  spanOf (TString s)      = sourceSpanTypeToSourceSpan s
+  spanOf (TNamedType _ s) = sourceSpanTypeToSourceSpan s
+  spanOf (TList _ s)      = sourceSpanTypeToSourceSpan s
+  spanOf (TFun _ _ s)     = sourceSpanTypeToSourceSpan s
+  spanOf (TRecord _ s)    = sourceSpanTypeToSourceSpan s
+  spanOf (TVar _ s)       = sourceSpanTypeToSourceSpan s
