@@ -16,6 +16,7 @@ import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
 import           MNML                (CompilerState (..),
                                       QualifiedValueReference, varIdPlusPlus)
+import           MNML.AST.Span       (spanOf)
 import qualified MNML.AST.Span       as SAST
 import           MNML.AST.Type       (typeOf)
 import qualified MNML.AST.Type       as TAST
@@ -79,11 +80,11 @@ opToOp SAST.And    = TAST.And
 opToOp SAST.Or     = TAST.Or
 opToOp SAST.Equals = TAST.Equals
 
-litToLit :: SAST.Literal -> TAST.Literal
-litToLit (SAST.LInt int s)      = TAST.LInt int (spanToSpanType s T.Int)
-litToLit (SAST.LFloat double s) = TAST.LFloat double (spanToSpanType s T.Float)
-litToLit (SAST.LChar char s)    = TAST.LChar char (spanToSpanType s T.Char)
-litToLit (SAST.LString text s)  = TAST.LString text (spanToSpanType s T.String)
+litToLit :: SAST.Literal -> Constrain TAST.Literal
+litToLit (SAST.LInt int s)      = TAST.LInt int . spanToSpanType s <$> freshTypeVar "num" [T.Numeric]
+litToLit (SAST.LFloat double s) = return (TAST.LFloat double (spanToSpanType s T.Float))
+litToLit (SAST.LChar char s)    = return (TAST.LChar char (spanToSpanType s T.Char))
+litToLit (SAST.LString text s)  = return (TAST.LString text (spanToSpanType s T.String))
 
 addError :: ConstraintError -> Constrain ()
 addError err = modify (\s -> s {_errors = err : _errors s})
@@ -112,9 +113,9 @@ constrain (SAST.EConstructor name spanA) = do
       t <- giveUp err name
       return (TAST.EConstructor name (spanToSpanType spanA t), [])
     Right expectedType -> return (TAST.EConstructor name (spanToSpanType spanA expectedType), [])
-constrain (SAST.ELit lit spanA) =
-  let lit' = litToLit lit
-   in return (TAST.ELit lit' (spanToSpanType spanA (typeOf lit')), [])
+constrain (SAST.ELit lit spanA) = do
+  lit' <- litToLit lit
+  return (TAST.ELit lit' (spanToSpanType spanA (typeOf lit')), [])
 constrain (SAST.ELambda args body spanA) = do
   (argVars, body', bodyConstraints) <- withNewScope $ do
     argVars <- mapM declareVar args
@@ -184,7 +185,7 @@ constrain (SAST.EList elems spanA) = do
   elemResults <- mapM constrain elems
   elemType <- freshTypeVar "elem" []
   retType <- freshTypeVar "ret" []
-  let consistencyConstraints = map (C.CEqual spanA elemType . typeOf . fst) elemResults
+  let consistencyConstraints = map ((\node -> C.CEqual (spanOf node) elemType (typeOf node)) . fst) elemResults
       elemConstraints = concatMap snd elemResults
   return
     ( TAST.EList (map fst elemResults) (spanToSpanType spanA retType)
@@ -234,9 +235,9 @@ constrainPattern (SAST.PList elemPats spanA) = do
   elemType <- freshTypeVar "ret" []
   let retCons = map (C.CEqual spanA elemType . typeOf) elemPats'
   return (TAST.PList elemPats' (spanToSpanType spanA elemType), concat (retCons : elemCons))
-constrainPattern (SAST.PLiteral lit spanA) =
-  let lit' = litToLit lit
-   in return (TAST.PLiteral lit' (spanToSpanType spanA (typeOf lit')), [])
+constrainPattern (SAST.PLiteral lit spanA) = do
+  lit' <- litToLit lit
+  return (TAST.PLiteral lit' (spanToSpanType spanA (typeOf lit')), [])
 
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
 freshTypeVar name traits = T.Var name (Set.fromList traits) <$> varIdPlusPlus
