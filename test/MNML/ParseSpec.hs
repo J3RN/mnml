@@ -2,7 +2,6 @@ module MNML.ParseSpec
     ( spec
     ) where
 
-import           Control.Monad       (unless)
 import           Control.Monad.State (runState)
 import           Data.Bifunctor      (first)
 import qualified Data.Map            as Map
@@ -11,8 +10,8 @@ import qualified Data.Text           as Text
 import           MNML                (CompilerState (..), emptyState)
 import           MNML.AST.Span
 import           MNML.Parse
+import           SpecHelpers
 import           Test.Hspec
-import           Text.Parsec         (sourceColumn, sourceLine)
 
 parse' :: Text -> (Either Text [Declaration], CompilerState)
 parse' source =
@@ -27,7 +26,7 @@ spec =
       it "parses constructor with no arguments" $ do
         let (ast, _cs) = parse' "main = None"
         case ast of
-          Right [ValueDecl "main" cons@(EConstructor "None" _) _] -> shouldSpan cons (1, 8) (1, 12)
+          Right [ValueDecl "main" cons@(EConstructor "None" _) _] -> nodeShouldSpan cons (1, 8) (1, 12)
           other -> unexpected other
 
       it "parses constructor with one argument" $ do
@@ -42,7 +41,7 @@ spec =
                         _
                       )
                 _
-              ] -> shouldSpan app (1, 8) (1, 40) >> shouldSpan cons (1, 8) (1, 15)
+              ] -> nodeShouldSpan app (1, 8) (1, 40) >> nodeShouldSpan cons (1, 8) (1, 15)
           other -> unexpected other
 
       it "parses constructor with multiple arguments" $ do
@@ -53,14 +52,14 @@ spec =
                 "main"
                 app@(EApp cons@(EConstructor "BinOp" _) [ELit (LInt 1 _) _, ELit (LChar '*' _) _, ELit (LInt 2 _) _] _)
                 _
-              ] -> shouldSpan app (1, 8) (1, 24) >> shouldSpan cons (1, 8) (1, 13)
+              ] -> nodeShouldSpan app (1, 8) (1, 24) >> nodeShouldSpan cons (1, 8) (1, 13)
           other -> unexpected other
 
     describe "records" $ do
       it "parses single" $ do
         let (ast, _cs) = parse' "main = {name: \"Jon\"}"
         case ast of
-          Right [ValueDecl "main" rec@(ERecord [("name", ELit (LString "Jon" _) _)] _) _] -> shouldSpan rec (1, 8) (1, 21)
+          Right [ValueDecl "main" rec@(ERecord [("name", ELit (LString "Jon" _) _)] _) _] -> nodeShouldSpan rec (1, 8) (1, 21)
           other -> unexpected other
 
       it "parses two" $ do
@@ -68,7 +67,7 @@ spec =
         case ast of
           Right
             [ ValueDecl "main" rec@(ERecord [("name", ELit (LString "Jon" _) _), ("age", ELit (LInt 30 _) _)] _) _
-              ] -> shouldSpan rec (1, 9) (1, 31)
+              ] -> nodeShouldSpan rec (1, 9) (1, 31)
           other -> unexpected other
 
     describe "case" $ do
@@ -86,14 +85,14 @@ spec =
                       _
                     )
                 _
-              ] -> shouldSpan c (1, 8) (4, 1) -- A bit odd but I'm not questioning it
+              ] -> nodeShouldSpan c (1, 8) (4, 1) -- A bit odd but I'm not questioning it
           other -> unexpected other
 
     describe "binary expressions" $ do
       it "parses addition" $ do
         let (ast, _cs) = parse' "main = 5 + 3"
         case ast of
-          Right [ValueDecl "main" bin@(EBinary (Add) (ELit (LInt 5 _) _) (ELit (LInt 3 _) _) _) _] -> shouldSpan bin (1, 8) (1, 13)
+          Right [ValueDecl "main" bin@(EBinary (Add) (ELit (LInt 5 _) _) (ELit (LInt 3 _) _) _) _] -> nodeShouldSpan bin (1, 8) (1, 13)
           other -> unexpected other
 
       it "does left association" $ do
@@ -104,7 +103,7 @@ spec =
                 "main"
                 outer@(EBinary Add inner@(EBinary Add (ELit (LInt 1 _) _) (ELit (LInt 2 _) _) _) (ELit (LInt 3 _) _) _)
                 _
-              ] -> shouldSpan outer (1, 8) (1, 17) >> shouldSpan inner (1, 8) (1, 14)
+              ] -> nodeShouldSpan outer (1, 8) (1, 17) >> nodeShouldSpan inner (1, 8) (1, 14)
           other -> unexpected other
 
       it "parses parens correctly" $ do
@@ -121,17 +120,17 @@ spec =
                     )
                 _
               ] ->
-              shouldSpan eq (1, 8) (1, 29)
-                >> shouldSpan mul (1, 8) (1, 20)
-                >> shouldSpan lAdd (1, 9) (1, 14)
-                >> shouldSpan rAdd (1, 23) (1, 29)
+              nodeShouldSpan eq (1, 8) (1, 29)
+                >> nodeShouldSpan mul (1, 8) (1, 20)
+                >> nodeShouldSpan lAdd (1, 9) (1, 14)
+                >> nodeShouldSpan rAdd (1, 23) (1, 29)
           other -> unexpected other
 
     describe "function application" $ do
       it "handles single application" $ do
         let (ast, _cs) = parse' "main = foo(1)"
         case ast of
-          Right [ValueDecl "main" app@(EApp (EVar "foo" _) [ELit (LInt 1 _) _] _) _] -> shouldSpan app (1, 8) (1, 14)
+          Right [ValueDecl "main" app@(EApp (EVar "foo" _) [ELit (LInt 1 _) _] _) _] -> nodeShouldSpan app (1, 8) (1, 14)
           other -> unexpected other
 
       it "handles chained applications" $ do
@@ -143,51 +142,25 @@ spec =
                 outer@(EApp inner@(EApp (EVar "foo" _) [ELit (LInt 1 _) _] _) [ELit (LInt 2 _) _] _)
                 _
               ] ->
-            shouldSpan inner (1, 8) (1, 14)
-              >> shouldSpan outer (1, 8) (1, 17)
+              nodeShouldSpan inner (1, 8) (1, 14)
+                >> nodeShouldSpan outer (1, 8) (1, 17)
           other -> unexpected other
 
     describe "list literals" $ do
       it "handles empty list" $ do
         let (ast, _cs) = parse' "main = []"
         case ast of
-          Right [ValueDecl "main" list@(EList [] _) _] -> shouldSpan list (1, 8) (1, 10)
+          Right [ValueDecl "main" list@(EList [] _) _] -> nodeShouldSpan list (1, 8) (1, 10)
           other -> unexpected other
 
       it "handles singleton list" $ do
         let (ast, _cs) = parse' "main = [3.14]"
         case ast of
-          Right [ValueDecl "main" list@(EList [ELit (LFloat 3.14 _) _] _) _] -> shouldSpan list (1, 8) (1, 14)
+          Right [ValueDecl "main" list@(EList [ELit (LFloat 3.14 _) _] _) _] -> nodeShouldSpan list (1, 8) (1, 14)
           other -> unexpected other
 
       it "handles multiple list" $ do
         let (ast, _cs) = parse' "main = [3.14, 2.72]"
         case ast of
-          Right [ValueDecl "main" list@(EList [ELit (LFloat 3.14 _) _, ELit (LFloat 2.72 _) _] _) _] -> shouldSpan list (1, 8) (1, 20)
+          Right [ValueDecl "main" list@(EList [ELit (LFloat 3.14 _) _, ELit (LFloat 2.72 _) _] _) _] -> nodeShouldSpan list (1, 8) (1, 20)
           other -> unexpected other
-
--- Custom expectation for spans
-
-unexpected :: (Show a) => a -> Expectation
-unexpected node = expectationFailure $ "Did not expect " <> (show node)
-
-shouldSpan :: (HasCallStack, Spanned a) => a -> (Int, Int) -> (Int, Int) -> Expectation
-shouldSpan node beg end =
-  let (sBeg, sEnd) = (spanOf node)
-      actualBeg = (sourceLine sBeg, sourceColumn sBeg)
-      actualEnd = (sourceLine sEnd, sourceColumn sEnd)
-   in unless
-        (actualBeg == beg && actualEnd == end)
-        ( expectationFailure
-            ( concat
-                [ "Expected span from "
-                , show beg
-                , " to "
-                , show end
-                , ", but actually spanned from "
-                , show actualBeg
-                , " to "
-                , show actualEnd
-                ]
-            )
-        )

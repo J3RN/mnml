@@ -92,6 +92,7 @@ test-suite mnml-test
   other-modules:
       MNML.ParseSpec
       MNML.UnifySpec
+      SpecHelpers
       Paths_mnml
   autogen-modules:
       Paths_mnml
