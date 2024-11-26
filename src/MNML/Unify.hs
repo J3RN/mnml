@@ -40,65 +40,65 @@ unify [] = return Nothing
 -- Delete
 unify ((CEqual _ t1 t2) : cs) | t1 == t2 = unify cs
 -- Decompose
-unify ((CEqual nodeId (T.List a) (T.List b)) : cs) = unify (CEqual nodeId a b : cs)
-unify ((CEqual nodeId (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2)) : cs) =
+unify ((CEqual sSpan (T.List a) (T.List b)) : cs) = unify (CEqual sSpan a b : cs)
+unify ((CEqual sSpan (T.Fun argTypes1 retType1) (T.Fun argTypes2 retType2)) : cs) =
   if length argTypes1 /= length argTypes2
-    then return (Just (ArgumentLengthMismatch nodeId))
+    then return (Just (ArgumentLengthMismatch sSpan))
     else
-      let retCon = CEqual nodeId retType1 retType2
-          argTypeCons = zipWith (CEqual nodeId) argTypes1 argTypes2
+      let retCon = CEqual sSpan retType1 retType2
+          argTypeCons = zipWith (CEqual sSpan) argTypes1 argTypes2
        in unify (retCon : (argTypeCons ++ cs))
-unify ((CEqual nodeId rec1@(T.Record fieldSpec1) rec2@(T.Record fieldSpec2)) : cs) =
+unify ((CEqual sSpan rec1@(T.Record fieldSpec1) rec2@(T.Record fieldSpec2)) : cs) =
   if List.sort (Map.keys fieldSpec1) == List.sort (Map.keys fieldSpec2)
-    then unify (commonFieldConstraints nodeId fieldSpec1 fieldSpec2 ++ cs)
-    else return (Just (UnificationError rec1 rec2 nodeId))
+    then unify (commonFieldConstraints sSpan fieldSpec1 fieldSpec2 ++ cs)
+    else return (Just (UnificationError rec1 rec2 sSpan))
 -- Eliminate
-unify ((CEqual nodeId var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2)) : cs)
+unify ((CEqual sSpan var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2)) : cs)
   -- Try to reuse a type var if possible
   | traits1 == traits2 =
       if id1 <= id2
-        then bind' nodeId var2 var1 cs
-        else bind' nodeId var1 var2 cs
-  | (var1 `implements`) `all` traits2 = bind' nodeId var2 var1 cs
-  | (var2 `implements`) `all` traits1 = bind' nodeId var1 var2 cs
+        then bind' sSpan var2 var1 cs
+        else bind' sSpan var1 var2 cs
+  | (var1 `implements`) `all` traits2 = bind' sSpan var2 var1 cs
+  | (var2 `implements`) `all` traits1 = bind' sSpan var1 var2 cs
   | otherwise = do
       newVar <- T.Var "x" (traits1 `Set.union` traits2) <$> varIdPlusPlus
-      bind nodeId var1 newVar cs
-        >>= either (return . Left) (bind nodeId var2 newVar)
+      bind sSpan var1 newVar cs
+        >>= either (return . Left) (bind sSpan var2 newVar)
         >>= either (return . Just) unify
-unify ((CEqual nodeId var@(T.Var _ traits _) t) : cs) =
+unify ((CEqual sSpan var@(T.Var _ traits _) t) : cs) =
   if (t `implements`) `all` traits
-    then bind' nodeId var t cs
-    else return (Just (ExpectedTraits t traits nodeId))
-unify ((CEqual nodeId pRec1@(T.PartialRecord fieldSpec1 _) pRec2@(T.PartialRecord fieldSpec2 _)) : cs) =
-  let commonFieldCs = commonFieldConstraints nodeId fieldSpec1 fieldSpec2
+    then bind' sSpan var t cs
+    else return (Just (ExpectedTraits t traits sSpan))
+unify ((CEqual sSpan pRec1@(T.PartialRecord fieldSpec1 _) pRec2@(T.PartialRecord fieldSpec2 _)) : cs) =
+  let commonFieldCs = commonFieldConstraints sSpan fieldSpec1 fieldSpec2
       supersetFieldSpec = fieldUnion fieldSpec1 fieldSpec2
    in do
         supersetPartialRecord <- T.PartialRecord supersetFieldSpec <$> varIdPlusPlus
-        bind nodeId pRec1 supersetPartialRecord cs
-          >>= either (return . Left) (bind nodeId pRec2 supersetPartialRecord)
+        bind sSpan pRec1 supersetPartialRecord cs
+          >>= either (return . Left) (bind sSpan pRec2 supersetPartialRecord)
           >>= either (return . Just) (unify . (++ commonFieldCs))
   where
     -- Combine the field specs.  The new, "super" field spec will use the type
     -- in fs1, if it exists, or otherwise the field spec in fs2.
     fieldUnion :: T.FieldSpec -> T.FieldSpec -> T.FieldSpec
     fieldUnion = Map.unionWith const
-unify ((CEqual nodeId (T.PartialRecord fieldSpec1 _) rec@(T.Record fieldSpec2)) : cs) =
+unify ((CEqual sSpan (T.PartialRecord fieldSpec1 _) rec@(T.Record fieldSpec2)) : cs) =
   if fieldSpec1 `isFieldSubset` fieldSpec2
-    then unify (commonFieldConstraints nodeId fieldSpec1 fieldSpec2 ++ cs)
-    else return (Just (ExpectedFields rec fieldSpec1 nodeId))
+    then unify (commonFieldConstraints sSpan fieldSpec1 fieldSpec2 ++ cs)
+    else return (Just (ExpectedFields rec fieldSpec1 sSpan))
   where
     isFieldSubset :: T.FieldSpec -> T.FieldSpec -> Bool
     isFieldSubset = List.isSubsequenceOf `on` (List.sort . Map.keys)
 -- Swap
-unify ((CEqual nodeId t var@(T.Var _ _ _)) : cs) = unify (CEqual nodeId var t : cs)
-unify ((CEqual nodeId t pRec@(T.PartialRecord _ _)) : cs) = unify (CEqual nodeId pRec t : cs)
+unify ((CEqual sSpan t var@(T.Var _ _ _)) : cs) = unify (CEqual sSpan var t : cs)
+unify ((CEqual sSpan t pRec@(T.PartialRecord _ _)) : cs) = unify (CEqual sSpan pRec t : cs)
 -- Conflict
-unify ((CEqual nodeId t1 t2) : _) = return (Just (UnificationError t1 t2 nodeId))
+unify ((CEqual sSpan t1 t2) : _) = return (Just (UnificationError t1 t2 sSpan))
 
 commonFieldConstraints :: SAST.SourceSpan -> T.FieldSpec -> T.FieldSpec -> [Constraint]
-commonFieldConstraints nodeId fieldSpec1 fieldSpec2 =
-  Map.elems (Map.intersectionWith (CEqual nodeId) fieldSpec1 fieldSpec2)
+commonFieldConstraints sSpan fieldSpec1 fieldSpec2 =
+  Map.elems (Map.intersectionWith (CEqual sSpan) fieldSpec1 fieldSpec2)
 
 implements :: T.Type -> T.Trait -> Bool
 implements (T.Var _ varTraits _) trait = trait `elem` varTraits
@@ -112,15 +112,15 @@ bind ::
   T.Type ->
   [Constraint] ->
   Constrain (Either UnificationError [Constraint])
-bind nodeId var t cs =
+bind sSpan var t cs =
   if var `occursIn` t
-    then return (Left (OccursError var t nodeId))
+    then return (Left (OccursError var t sSpan))
     else do
       modify (eliminateAndInsert var t)
       return (Right (map constraintEliminate cs))
   where
     subst = (var, t)
-    constraintEliminate (CEqual nodeId' t1 t2) = CEqual nodeId' (applySubst subst t1) (applySubst subst t2)
+    constraintEliminate (CEqual sSpan' t1 t2) = CEqual sSpan' (applySubst subst t1) (applySubst subst t2)
     eliminateAndInsert :: T.Type -> T.Type -> Subst -> Subst
     eliminateAndInsert src target subs = Map.insert src target (Map.map (eliminate src target) subs)
     eliminate :: T.Type -> T.Type -> T.Type -> T.Type
@@ -131,7 +131,7 @@ bind nodeId var t cs =
     eliminate _ _ substType = substType
 
 bind' :: SAST.SourceSpan -> T.Type -> T.Type -> [Constraint] -> Constrain (Maybe UnificationError)
-bind' nodeId var t cs = bind nodeId var t cs >>= either (return . Just) unify
+bind' sSpan var t cs = bind sSpan var t cs >>= either (return . Just) unify
 
 occursIn :: T.Type -> T.Type -> Bool
 occursIn _ T.Int = False
