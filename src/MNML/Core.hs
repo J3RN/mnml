@@ -26,6 +26,7 @@ data Expr
 data Type
   = I32
   | F64
+  | DataPointer
   | FR Funcref
 
 data Function
@@ -60,6 +61,7 @@ instance Show Expr where
 instance Show Type where
   show I32                 = "i32"
   show F64                 = "f64"
+  show DataPointer         = "i64"
   show (FR (Funcref name)) = concat ["(func ", show name, ")"]
 
 instance Show Function where
