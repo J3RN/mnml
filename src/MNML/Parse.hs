@@ -11,12 +11,12 @@ import qualified Data.Map            as Map
 import           Data.Maybe          (listToMaybe, mapMaybe)
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
-import           MNML                (CompilerState (..),
-                                      QualifiedValueReference, moduleDefCache,
+import           MNML                (CompilerState (..), moduleDefCache,
                                       valueDefCache, writeThrough)
 import           MNML.AST.Span       (Definition (..), Expr (..), Literal (..),
                                       Operator (..), Pattern (..),
                                       SourceSpan (..), Type (..))
+import           MNML.Base           (QualifiedValueReference)
 import           Text.Parsec         (ParseError, ParsecT, alphaNum, char, eof,
                                       getPosition, lower, many, many1, manyTill,
                                       oneOf, option, runParserT, sepBy1, space,

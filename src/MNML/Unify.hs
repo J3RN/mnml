@@ -12,10 +12,10 @@ import qualified Data.Map            as Map
 import           Data.Maybe          (fromMaybe)
 import           Data.Set            (Set)
 import qualified Data.Set            as Set
-import           MNML                (CompilerState (..),
-                                      QualifiedValueReference, varIdPlusPlus)
+import           MNML                (CompilerState (..), varIdPlusPlus)
 import qualified MNML.AST.Span       as SAST
 import qualified MNML.AST.Type       as TAST
+import           MNML.Base           (QualifiedValueReference)
 import qualified MNML.Constrain      as C
 import           MNML.Constraint     (Constraint (..))
 import qualified MNML.Type           as T

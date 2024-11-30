@@ -28,6 +28,7 @@ library
       MNML
       MNML.AST.Span
       MNML.AST.Type
+      MNML.Base
       MNML.Constrain
       MNML.Constraint
       MNML.Core

@@ -6,9 +6,10 @@ import           Control.Monad.State (State)
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
 import           Lens.Micro          (Lens', lens, over)
-import           MNML                (CompilerState, QualifiedValueReference)
+import           MNML                (CompilerState)
 import           MNML.AST.Type       (typeOf)
 import qualified MNML.AST.Type       as TAST
+import           MNML.Base           (QualfifiedValueReference)
 import qualified MNML.Constrain      as C
 import qualified MNML.Core           as Core
 import qualified MNML.Type           as T

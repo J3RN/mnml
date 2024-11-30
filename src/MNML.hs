@@ -1,7 +1,6 @@
 module MNML
     ( CompilerState (..)
     , Modules
-    , QualifiedValueReference
     , emptyState
     , moduleDefCache
     , nextTypeId
@@ -18,10 +17,10 @@ import qualified Data.Map            as Map
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, (^.))
 import qualified MNML.AST.Span       as SAST
+import           MNML.Base           (QualifiedValueReference)
 import qualified MNML.Constraint     as C
 import qualified MNML.Type           as T
 
-type QualifiedValueReference = (Text, Text)
 
 -- The compiler state contains caches, essentially
 

@@ -12,6 +12,7 @@ module MNML.AST.Type
 
 import           Data.Text     (Text)
 import           MNML.AST.Span (SourceSpan (..), Spanned (..))
+import           MNML.Base     (QualifiedValueReference)
 import qualified MNML.Type     as T
 import           Text.Parsec   (SourcePos)
 

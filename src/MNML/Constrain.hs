@@ -20,6 +20,7 @@ import           MNML.AST.Span       (spanOf)
 import qualified MNML.AST.Span       as SAST
 import           MNML.AST.Type       (typeOf)
 import qualified MNML.AST.Type       as TAST
+import           MNML.Base           (QualifiedValueReference)
 import qualified MNML.Constraint     as C
 import qualified MNML.Parse          as P
 import qualified MNML.Type           as T
