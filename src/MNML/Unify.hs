@@ -163,7 +163,7 @@ applySubst _ var@(T.Var _ _ _) = var
 applySubst subst (T.PartialRecord fieldSpec prId) = T.PartialRecord (Map.map (applySubst subst) fieldSpec) prId
 
 valueType ::
-  QualifiedValueReference -> State CompilerState (Either [UnificationError] [C.TypedValueDecl])
+  QualifiedValueReference -> State CompilerState (Either [UnificationError] [C.TypedValueDef])
 valueType qvr = do
   constraintsRes <- C.valueConstraints qvr
   case constraintsRes of
@@ -174,7 +174,7 @@ valueType qvr = do
         (Nothing, subst) -> return (Right (map (resolveTypeAnno subst) tvds))
     Left constrainErrs -> return (Left (map ConstraintError constrainErrs))
   where
-    resolveTypeAnno :: Subst -> C.TypedValueDecl -> C.TypedValueDecl
+    resolveTypeAnno :: Subst -> C.TypedValueDef -> C.TypedValueDef
     resolveTypeAnno subst = second (resolveTypeAnno' subst)
     resolveTypeAnno' subst (TAST.EVar name sst) = TAST.EVar name (maybeSubType subst sst)
     resolveTypeAnno' subst (TAST.EConstructor name sst) = TAST.EConstructor name (maybeSubType subst sst)

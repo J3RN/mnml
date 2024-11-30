@@ -14,7 +14,7 @@ import qualified Data.Text           as Text
 import           MNML                (CompilerState (..),
                                       QualifiedValueReference, moduleDefCache,
                                       valueDefCache, writeThrough)
-import           MNML.AST.Span       (Declaration (..), Expr (..), Literal (..),
+import           MNML.AST.Span       (Definition (..), Expr (..), Literal (..),
                                       Operator (..), Pattern (..),
                                       SourceSpan (..), Type (..))
 import           Text.Parsec         (ParseError, ParsecT, alphaNum, char, eof,
@@ -50,18 +50,18 @@ valueDef qvr = writeThrough valueDefCache findValDef qvr
         Right
         ( findMaybe
             ( \case
-                (ValueDecl n expr _) | n == name -> Just expr
+                (ValueDef n expr _) | n == name -> Just expr
                 _ -> Nothing
             )
             defs
         )
 
-moduleDef :: Text -> State CompilerState (Either MNML.Parse.ParseError [Declaration])
+moduleDef :: Text -> State CompilerState (Either MNML.Parse.ParseError [Definition])
 moduleDef = writeThrough moduleDefCache parse
 
 -- Function to run the parser
 
-parse :: Text -> State CompilerState (Either MNML.Parse.ParseError [Declaration])
+parse :: Text -> State CompilerState (Either MNML.Parse.ParseError [Definition])
 parse modu = do
   moduleTextResult <- gets ((Map.!? modu) . _modules)
   case moduleTextResult of
@@ -91,20 +91,20 @@ captureSpan p = do
   return (node (SourceSpan start end))
 
 -- Top-level Parsers
-mod :: Parser [Declaration]
+mod :: Parser [Definition]
 mod = do
   _ <- many whiteSpace
-  manyTill decl eof
+  manyTill def eof
 
-decl :: Parser Declaration
-decl = typeDecl <|> typeAliasDecl <|> valueDecl
+def :: Parser Definition
+def = typeDef <|> typeAliasDef <|> valueDef'
 
-typeDecl :: Parser Declaration
-typeDecl = captureSpan $ do
+typeDef :: Parser Definition
+typeDef = captureSpan $ do
   name <- typeIdentifier
   _ <- equal
   constructors <- sepBy1 constructor bar
-  return (TypeDecl name constructors)
+  return (TypeDef name constructors)
 
 constructor :: Parser (Text, [Type])
 constructor = do
@@ -112,20 +112,20 @@ constructor = do
   cData <- parens (commaSep pType) <|> pure []
   return (name, cData)
 
-typeAliasDecl :: Parser Declaration
-typeAliasDecl = captureSpan $ do
+typeAliasDef :: Parser Definition
+typeAliasDef = captureSpan $ do
   _ <- reserved "alias"
   expansionType <- pType
   _ <- reserved "as"
   name <- typeIdentifier
-  return (TypeAliasDecl name expansionType)
+  return (TypeAliasDef name expansionType)
 
-valueDecl :: Parser Declaration
-valueDecl = captureSpan $ do
+valueDef' :: Parser Definition
+valueDef' = captureSpan $ do
   name <- identifier
   _ <- equal
   expr <- expression
-  return (ValueDecl name expr)
+  return (ValueDef name expr)
 
 -- Type Parsers
 
@@ -146,11 +146,11 @@ funType = captureSpan $ do
 
 recordType :: Parser Type
 recordType = captureSpan $ do
-  fields <- braces (commaSep fieldDecl)
+  fields <- braces (commaSep fieldDef)
   return (TRecord fields)
 
-fieldDecl :: Parser (Text, Type)
-fieldDecl = do
+fieldDef :: Parser (Text, Type)
+fieldDef = do
   fieldName <- identifier
   _ <- colon
   fieldType <- pType

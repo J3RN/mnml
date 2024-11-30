@@ -10,13 +10,13 @@ import qualified Data.Text           as Text
 import           MNML                (CompilerState (..), emptyState)
 import           MNML.AST.Type       (Typed (..))
 import qualified MNML.AST.Type       as TAST
-import           MNML.Constrain      (TypedValueDecl)
+import           MNML.Constrain      (TypedValueDef)
 import qualified MNML.Type           as T
 import           MNML.Unify
 import           SpecHelpers
 import           Test.Hspec
 
-unify' :: Text -> (Either [UnificationError] [TypedValueDecl], CompilerState)
+unify' :: Text -> (Either [UnificationError] [TypedValueDef], CompilerState)
 unify' source = runState (valueType ("test", "main")) compilerState
   where
     compilerState = emptyState {_modules = Map.fromList [("test", source)]}

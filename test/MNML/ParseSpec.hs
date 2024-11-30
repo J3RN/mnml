@@ -13,7 +13,7 @@ import           MNML.Parse
 import           SpecHelpers
 import           Test.Hspec
 
-parse' :: Text -> (Either Text [Declaration], CompilerState)
+parse' :: Text -> (Either Text [Definition], CompilerState)
 parse' source =
   first
     (first (Text.pack . show))
@@ -26,14 +26,14 @@ spec =
       it "parses constructor with no arguments" $ do
         let (ast, _cs) = parse' "main = None"
         case ast of
-          Right [ValueDecl "main" cons@(EConstructor "None" _) _] -> nodeShouldSpan cons (1, 8) (1, 12)
+          Right [ValueDef "main" cons@(EConstructor "None" _) _] -> nodeShouldSpan cons (1, 8) (1, 12)
           other -> unexpected other
 
       it "parses constructor with one argument" $ do
         let (ast, _cs) = parse' "main = Success({ body: \"hello world!\"})"
         case ast of
           Right
-            [ ValueDecl
+            [ ValueDef
                 "main"
                 app@( EApp
                         cons@(EConstructor "Success" _)
@@ -48,7 +48,7 @@ spec =
         let (ast, _cs) = parse' "main = BinOp(1, '*', 2)"
         case ast of
           Right
-            [ ValueDecl
+            [ ValueDef
                 "main"
                 app@(EApp cons@(EConstructor "BinOp" _) [ELit (LInt 1 _) _, ELit (LChar '*' _) _, ELit (LInt 2 _) _] _)
                 _
@@ -59,14 +59,14 @@ spec =
       it "parses single" $ do
         let (ast, _cs) = parse' "main = {name: \"Jon\"}"
         case ast of
-          Right [ValueDecl "main" rec@(ERecord [("name", ELit (LString "Jon" _) _)] _) _] -> nodeShouldSpan rec (1, 8) (1, 21)
+          Right [ValueDef "main" rec@(ERecord [("name", ELit (LString "Jon" _) _)] _) _] -> nodeShouldSpan rec (1, 8) (1, 21)
           other -> unexpected other
 
       it "parses two" $ do
         let (ast, _cs) = parse' "main =  {name: \"Jon\", age: 30}"
         case ast of
           Right
-            [ ValueDecl "main" rec@(ERecord [("name", ELit (LString "Jon" _) _), ("age", ELit (LInt 30 _) _)] _) _
+            [ ValueDef "main" rec@(ERecord [("name", ELit (LString "Jon" _) _), ("age", ELit (LInt 30 _) _)] _) _
               ] -> nodeShouldSpan rec (1, 9) (1, 31)
           other -> unexpected other
 
@@ -75,7 +75,7 @@ spec =
         let (ast, _cs) = parse' (Text.unlines ["main = case foo of", "Just(n) -> n", "None -> 5"])
         case ast of
           Right
-            [ ValueDecl
+            [ ValueDef
                 "main"
                 c@( ECase
                       (EVar "foo" _)
@@ -92,14 +92,14 @@ spec =
       it "parses addition" $ do
         let (ast, _cs) = parse' "main = 5 + 3"
         case ast of
-          Right [ValueDecl "main" bin@(EBinary (Add) (ELit (LInt 5 _) _) (ELit (LInt 3 _) _) _) _] -> nodeShouldSpan bin (1, 8) (1, 13)
+          Right [ValueDef "main" bin@(EBinary (Add) (ELit (LInt 5 _) _) (ELit (LInt 3 _) _) _) _] -> nodeShouldSpan bin (1, 8) (1, 13)
           other -> unexpected other
 
       it "does left association" $ do
         let (ast, _cs) = parse' "main = 1 + 2 + 3"
         case ast of
           Right
-            [ ValueDecl
+            [ ValueDef
                 "main"
                 outer@(EBinary Add inner@(EBinary Add (ELit (LInt 1 _) _) (ELit (LInt 2 _) _) _) (ELit (LInt 3 _) _) _)
                 _
@@ -110,7 +110,7 @@ spec =
         let (ast, _cs) = parse' "main = (5 + 3) * 3 == 20 + 4"
         case ast of
           Right
-            [ ValueDecl
+            [ ValueDef
                 "main"
                 eq@( EBinary
                       Equals
@@ -130,14 +130,14 @@ spec =
       it "handles single application" $ do
         let (ast, _cs) = parse' "main = foo(1)"
         case ast of
-          Right [ValueDecl "main" app@(EApp (EVar "foo" _) [ELit (LInt 1 _) _] _) _] -> nodeShouldSpan app (1, 8) (1, 14)
+          Right [ValueDef "main" app@(EApp (EVar "foo" _) [ELit (LInt 1 _) _] _) _] -> nodeShouldSpan app (1, 8) (1, 14)
           other -> unexpected other
 
       it "handles chained applications" $ do
         let (ast, _cs) = parse' "main = foo(1)(2)"
         case ast of
           Right
-            [ ValueDecl
+            [ ValueDef
                 "main"
                 outer@(EApp inner@(EApp (EVar "foo" _) [ELit (LInt 1 _) _] _) [ELit (LInt 2 _) _] _)
                 _
@@ -150,17 +150,17 @@ spec =
       it "handles empty list" $ do
         let (ast, _cs) = parse' "main = []"
         case ast of
-          Right [ValueDecl "main" list@(EList [] _) _] -> nodeShouldSpan list (1, 8) (1, 10)
+          Right [ValueDef "main" list@(EList [] _) _] -> nodeShouldSpan list (1, 8) (1, 10)
           other -> unexpected other
 
       it "handles singleton list" $ do
         let (ast, _cs) = parse' "main = [3.14]"
         case ast of
-          Right [ValueDecl "main" list@(EList [ELit (LFloat 3.14 _) _] _) _] -> nodeShouldSpan list (1, 8) (1, 14)
+          Right [ValueDef "main" list@(EList [ELit (LFloat 3.14 _) _] _) _] -> nodeShouldSpan list (1, 8) (1, 14)
           other -> unexpected other
 
       it "handles multiple list" $ do
         let (ast, _cs) = parse' "main = [3.14, 2.72]"
         case ast of
-          Right [ValueDecl "main" list@(EList [ELit (LFloat 3.14 _) _, ELit (LFloat 2.72 _) _] _) _] -> nodeShouldSpan list (1, 8) (1, 20)
+          Right [ValueDef "main" list@(EList [ELit (LFloat 3.14 _) _, ELit (LFloat 2.72 _) _] _) _] -> nodeShouldSpan list (1, 8) (1, 20)
           other -> unexpected other

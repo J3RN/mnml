@@ -1,5 +1,5 @@
 module MNML.AST.Span
-    ( Declaration (..)
+    ( Definition (..)
     , Expr (..)
     , Literal (..)
     , Operator (..)
@@ -19,10 +19,10 @@ data SourceSpan
       }
   deriving (Eq, Show)
 
-data Declaration
-  = TypeDecl Text [(Text, [Type])] SourceSpan -- "MyType = Foo(String) | Bar(Int, String)"
-  | TypeAliasDecl Text Type SourceSpan -- "alias  {name: String} as User" or "alias Int as Price"
-  | ValueDecl Text Expr SourceSpan
+data Definition
+  = TypeDef Text [(Text, [Type])] SourceSpan -- "MyType = Foo(String) | Bar(Int, String)"
+  | TypeAliasDef Text Type SourceSpan -- "alias  {name: String} as User" or "alias Int as Price"
+  | ValueDef Text Expr SourceSpan
   deriving (Eq, Show)
 
 data Expr
@@ -71,10 +71,10 @@ data Type
 class Spanned a where
   spanOf :: a -> SourceSpan
 
-instance Spanned Declaration where
-  spanOf (TypeDecl _ _ s)      = s
-  spanOf (TypeAliasDecl _ _ s) = s
-  spanOf (ValueDecl _ _ s)     = s
+instance Spanned Definition where
+  spanOf (TypeDef _ _ s)      = s
+  spanOf (TypeAliasDef _ _ s) = s
+  spanOf (ValueDef _ _ s)     = s
 
 instance Spanned Expr where
   spanOf (EVar _ s)         = s

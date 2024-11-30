@@ -1,5 +1,5 @@
 module MNML.AST.Type
-    ( Declaration (..)
+    ( Definition (..)
     , Expr (..)
     , Literal (..)
     , Operator (..)
@@ -23,10 +23,10 @@ data SourceSpanType
       }
   deriving (Eq, Show)
 
-data Declaration
-  = TypeDecl Text [(Text, [Type])] SourceSpanType -- "MyType = Foo(String) | Bar(Int, String)"
-  | TypeAliasDecl Text Type SourceSpanType -- "alias  {name: String} as User" or "alias Int as Price"
-  | ValueDecl Text Expr SourceSpanType
+data Definition
+  = TypeDef Text [(Text, [Type])] SourceSpanType -- "MyType = Foo(String) | Bar(Int, String)"
+  | TypeAliasDef Text Type SourceSpanType -- "alias  {name: String} as User" or "alias Int as Price"
+  | ValueDef Text Expr SourceSpanType
   deriving (Eq, Show)
 
 data Expr
@@ -78,15 +78,15 @@ sourceSpanTypeToSourceSpan (SourceSpanType {_spanStart = s, _spanEnd = e}) = Sou
 class Typed a where
   typeOf :: a -> T.Type
 
-instance Typed Declaration where
-  typeOf (TypeDecl _ _ (SourceSpanType {_type = t}))      = t
-  typeOf (TypeAliasDecl _ _ (SourceSpanType {_type = t})) = t
-  typeOf (ValueDecl _ _ (SourceSpanType {_type = t}))     = t
+instance Typed Definition where
+  typeOf (TypeDef _ _ (SourceSpanType {_type = t}))      = t
+  typeOf (TypeAliasDef _ _ (SourceSpanType {_type = t})) = t
+  typeOf (ValueDef _ _ (SourceSpanType {_type = t}))     = t
 
-instance Spanned Declaration where
-  spanOf (TypeDecl _ _ s)      = sourceSpanTypeToSourceSpan s
-  spanOf (TypeAliasDecl _ _ s) = sourceSpanTypeToSourceSpan s
-  spanOf (ValueDecl _ _ s)     = sourceSpanTypeToSourceSpan s
+instance Spanned Definition where
+  spanOf (TypeDef _ _ s)      = sourceSpanTypeToSourceSpan s
+  spanOf (TypeAliasDef _ _ s) = sourceSpanTypeToSourceSpan s
+  spanOf (ValueDef _ _ s)     = sourceSpanTypeToSourceSpan s
 
 instance Typed Expr where
   typeOf (EVar _ (SourceSpanType {_type = t}))         = t

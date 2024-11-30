@@ -1,6 +1,6 @@
 module MNML.Constrain
     ( ConstraintError
-    , TypedValueDecl
+    , TypedValueDef
     , valueConstraints
     ) where
 
@@ -28,7 +28,7 @@ type Bindings = Map Text T.Type
 
 type PendingType = (QualifiedValueReference, T.Type, SAST.SourceSpan)
 
-type TypedValueDecl = (QualifiedValueReference, TAST.Expr)
+type TypedValueDef = (QualifiedValueReference, TAST.Expr)
 
 data ConstraintError
   = UnknownConstructor Text -- SAST.SourceSpan
@@ -263,18 +263,18 @@ constructorType :: Text -> Text -> Constrain (Either ConstraintError T.Type)
 constructorType modu conName = do
   mDef <- lift (P.moduleDef modu)
   case mDef of
-    Left err    -> return (Left (ParseError err))
-    Right decls -> findConType decls conName
+    Left err   -> return (Left (ParseError err))
+    Right defs -> findConType defs conName
 
-findConType :: [SAST.Declaration] -> Text -> Constrain (Either ConstraintError T.Type)
-findConType decls conName =
+findConType :: [SAST.Definition] -> Text -> Constrain (Either ConstraintError T.Type)
+findConType defs conName =
   foldl (<>) (Left (UnknownConstructor conName))
     <$> mapM
       ( \case
-          (SAST.TypeDecl tName constructors _) -> conTypeFromConstructors conName tName constructors
+          (SAST.TypeDef tName constructors _) -> conTypeFromConstructors conName tName constructors
           _ -> return (Left (UnknownConstructor conName))
       )
-      decls
+      defs
 
 conTypeFromConstructors ::
   Text -> Text -> [(Text, [SAST.Type])] -> Constrain (Either ConstraintError T.Type)
@@ -319,30 +319,30 @@ moduleNamedType modu typeName = do
     Right mDef -> findDef typeName mDef
     Left _     -> return (Left (UnknownType typeName))
   where
-    findDef :: Text -> [SAST.Declaration] -> Constrain (Either ConstraintError T.Type)
-    findDef name decls =
+    findDef :: Text -> [SAST.Definition] -> Constrain (Either ConstraintError T.Type)
+    findDef name defs =
       foldl (<>) (Left (UnknownType typeName))
         <$> mapM
           ( \case
-              (SAST.TypeDecl n _ _) | n == name -> return (Right (T.AlgebraicType n))
-              (SAST.TypeAliasDecl n t _) | n == name -> (T.TypeAlias n <$>) <$> typify t
+              (SAST.TypeDef n _ _) | n == name -> return (Right (T.AlgebraicType n))
+              (SAST.TypeAliasDef n t _) | n == name -> (T.TypeAlias n <$>) <$> typify t
               _ -> return (Left (UnknownType typeName))
           )
-          decls
+          defs
 
 valueConstraints ::
   QualifiedValueReference ->
-  State CompilerState (Either [ConstraintError] ([TypedValueDecl], [C.Constraint]))
+  State CompilerState (Either [ConstraintError] ([TypedValueDef], [C.Constraint]))
 valueConstraints qvr@(modu, _) = do
   res <$> runStateT (valueConstraints' qvr) (initialEnv modu)
   where
     res ::
-      (([TypedValueDecl], [C.Constraint]), ConstrainEnv) ->
-      Either [ConstraintError] ([TypedValueDecl], [C.Constraint])
+      (([TypedValueDef], [C.Constraint]), ConstrainEnv) ->
+      Either [ConstraintError] ([TypedValueDef], [C.Constraint])
     res (t, ConstrainEnv {_errors = []})   = Right t
     res (_, ConstrainEnv {_errors = errs}) = Left errs
 
-valueConstraints' :: QualifiedValueReference -> Constrain ([TypedValueDecl], [C.Constraint])
+valueConstraints' :: QualifiedValueReference -> Constrain ([TypedValueDef], [C.Constraint])
 valueConstraints' qvr@(modu, valName) = do
   def <- lift (P.valueDef qvr)
   case def of
@@ -356,7 +356,7 @@ valueConstraints' qvr@(modu, valName) = do
     Left err -> addError (ParseError err) $> ([], [])
   where
     foldPendingType ::
-      ([TypedValueDecl], [C.Constraint]) -> PendingType -> Constrain ([TypedValueDecl], [C.Constraint])
+      ([TypedValueDef], [C.Constraint]) -> PendingType -> Constrain ([TypedValueDef], [C.Constraint])
     foldPendingType (tvds, cs) (qvr', t, spanA) = do
       (tvds', cs') <- valueConstraints' qvr'
       case tvds' of

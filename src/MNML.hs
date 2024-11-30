@@ -27,7 +27,7 @@ type QualifiedValueReference = (Text, Text)
 
 type Modules = Map Text Text
 
-type ModuleDefCache = Map Text [SAST.Declaration]
+type ModuleDefCache = Map Text [SAST.Definition]
 
 type ValueDefCache = Map QualifiedValueReference SAST.Expr
 
