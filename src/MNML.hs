@@ -19,8 +19,8 @@ import           Lens.Micro          (Lens', lens, over, (^.))
 import qualified MNML.AST.Span       as SAST
 import           MNML.Base           (QualifiedValueReference)
 import qualified MNML.Constraint     as C
-import qualified MNML.Type           as T
-
+import           MNML.Type           (Type)
+import qualified MNML.Type           as Type
 
 -- The compiler state contains caches, essentially
 
@@ -30,12 +30,12 @@ type ModuleDefCache = Map Text [SAST.Definition]
 
 type ValueDefCache = Map QualifiedValueReference SAST.Expr
 
-type ValueConstraintsCache = Map QualifiedValueReference (T.Type, [C.Constraint])
+type ValueConstraintsCache = Cache QualifiedValueReference (Type, [C.Constraint])
 
 data CompilerState
   = CompilerState
       { _modules               :: Modules
-      , _nextTypeId            :: T.VarId
+      , _nextTypeId            :: Type.VarId
       , _moduleDefCache        :: ModuleDefCache
       , _valueDefCache         :: ValueDefCache
       , _valueConstraintsCache :: ValueConstraintsCache
@@ -57,7 +57,7 @@ emptyState =
 stateModules :: Lens' CompilerState Modules
 stateModules = lens _modules (\cs mods -> cs {_modules = mods})
 
-nextTypeId :: Lens' CompilerState T.VarId
+nextTypeId :: Lens' CompilerState Type.VarId
 nextTypeId = lens _nextTypeId (\cs vi -> cs {_nextTypeId = vi})
 
 moduleDefCache :: Lens' CompilerState ModuleDefCache
@@ -70,7 +70,7 @@ valueConstraintsCache :: Lens' CompilerState ValueConstraintsCache
 valueConstraintsCache = lens _valueConstraintsCache (\cs vcc -> cs {_valueConstraintsCache = vcc})
 
 -- Not a great name, but
-varIdPlusPlus :: StateT m (State CompilerState) T.VarId
+varIdPlusPlus :: StateT m (State CompilerState) Type.VarId
 varIdPlusPlus = lift (state (\s -> (_nextTypeId s, s {_nextTypeId = _nextTypeId s + 1})))
 
 -- Cache ops
