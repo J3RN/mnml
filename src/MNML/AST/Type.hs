@@ -7,6 +7,7 @@ module MNML.AST.Type
     , SourceSpanType (..)
     , Type (..)
     , Typed (..)
+    , TypedValueDef
     , sourceSpanTypeToSourceSpan
     ) where
 
@@ -15,6 +16,8 @@ import           MNML.AST.Span (SourceSpan (..), Spanned (..))
 import           MNML.Base     (QualifiedValueReference)
 import qualified MNML.Type     as T
 import           Text.Parsec   (SourcePos)
+
+type TypedValueDef = (QualifiedValueReference, Expr)
 
 data SourceSpanType
   = SourceSpanType

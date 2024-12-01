@@ -8,9 +8,8 @@ import qualified Data.Set            as Set
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
 import           MNML                (CompilerState (..), emptyState)
-import           MNML.AST.Type       (Typed (..))
+import           MNML.AST.Type       (Typed (..), TypedValueDef)
 import qualified MNML.AST.Type       as TAST
-import           MNML.Constrain      (TypedValueDef)
 import qualified MNML.Type           as T
 import           MNML.Unify
 import           SpecHelpers
@@ -124,8 +123,8 @@ spec =
             [ (_, mainFun@(TAST.ELambda [] fooRef@(TAST.EVar "foo" _) _))
               , (_, foo@(TAST.ELit (TAST.LInt 5 _) _))
               ] -> do
-              typeOf mainFun `shouldBe` T.Fun [] (T.Var "num" (Set.singleton T.Numeric) 2)
-              typeOf fooRef `shouldBe` T.Var "num" (Set.singleton T.Numeric) 2
+              typeOf mainFun `shouldBe` T.Fun [] (T.Var "num" (Set.singleton T.Numeric) 3)
+              typeOf fooRef `shouldBe` T.Var "num" (Set.singleton T.Numeric) 3
               typeOf foo `shouldBe` T.Var "num" (Set.singleton T.Numeric) 2
           other -> unexpected other
 
@@ -454,7 +453,8 @@ spec =
                   )
               ] -> do
               typeOf main `shouldBe` T.Float
-              typeOf foo `shouldBe` T.Fun [T.Float] T.Float
+              typeOf foo
+                `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 3] (T.Var "num" (Set.singleton T.Numeric) 3)
           other -> unexpected other
 
       it "allows functions with type constraints to stay generic" $ do
@@ -469,22 +469,17 @@ spec =
           Right
             [ (("test", "main"), main@(TAST.ELambda [] (TAST.ERecord _ _) _))
               , ( ("test", "foo")
-                  , foo1@(TAST.ELambda ["x"] (TAST.EBinary TAST.Mul (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 5 _) _) _) _)
-                  )
-              , ( ("test", "foo")
-                  , foo2@(TAST.ELambda ["x"] (TAST.EBinary TAST.Mul (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 5 _) _) _) _)
+                  , foo@(TAST.ELambda ["x"] (TAST.EBinary TAST.Mul (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 5 _) _) _) _)
                   )
               ] -> do
               typeOf main
                 `shouldBe` T.Fun
                   []
                   (T.Record (Map.fromList [("float", T.Float), ("numeric", T.Var "num" (Set.singleton T.Numeric) 3)]))
-              typeOf foo1
-                `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 3] (T.Var "num" (Set.singleton T.Numeric) 3)
-              typeOf foo2 `shouldBe` T.Fun [T.Float] T.Float
+              typeOf foo
+                `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 8] (T.Var "num" (Set.singleton T.Numeric) 8)
           other -> unexpected other
 
-      -- The way that this works (generating a new function for each invocation) is decidedly pretty quirky.  It works, for now, however.
       it "allows functions with partial records to stay generic" $ do
         let (res, _cs) =
               unify'
@@ -500,14 +495,7 @@ spec =
           Right
             [ (("test", "main"), main@(TAST.ELambda [] (TAST.ERecord _ _) _))
               , ( ("test", "foo")
-                  , foo1@( TAST.ELambda
-                            ["x"]
-                            (TAST.ECase (TAST.EVar "x" _) [(TAST.PRecord [("name", TAST.PVar "a" _)] _, TAST.EVar "a" _)] _)
-                            _
-                          )
-                  )
-              , ( ("test", "foo")
-                  , foo2@( TAST.ELambda
+                  , foo@( TAST.ELambda
                             ["x"]
                             (TAST.ECase (TAST.EVar "x" _) [(TAST.PRecord [("name", TAST.PVar "a" _)] _, TAST.EVar "a" _)] _)
                             _
@@ -515,12 +503,10 @@ spec =
                   )
               ] -> do
               typeOf main `shouldBe` T.Fun [] (T.Record (Map.fromList [("string", T.String), ("float", T.Float)]))
-              typeOf foo1
+              typeOf foo
                 `shouldBe` T.Fun
-                  [T.Record (Map.fromList [("baz", T.Var "num" (Set.singleton T.Numeric) 4), ("name", T.Float)])]
-                  T.Float
-              typeOf foo2
-                `shouldBe` T.Fun [T.Record (Map.fromList [("abc", T.String), ("name", T.String)])] T.String
+                  [T.PartialRecord (Map.fromList [("name", T.Var "a" Set.empty 10)]) 12]
+                  (T.Var "a" Set.empty 10)
           other -> unexpected other
 
       it "unifies trivial circular reference" $ do
@@ -531,7 +517,7 @@ spec =
               , (("test", "foo"), foo@(TAST.ELambda [] (TAST.EApp (TAST.EVar "main" _) [] _) _))
               ] -> do
               typeOf main `shouldBe` T.Fun [] (T.Var "ret" Set.empty 1)
-              typeOf foo `shouldBe` T.Fun [] (T.Var "ret" Set.empty 1)
+              typeOf foo `shouldBe` T.Fun [] (T.Var "ret" Set.empty 4)
           other -> unexpected other
 
       it "unifies practical circular reference" $ do
@@ -591,5 +577,5 @@ spec =
                   )
               ] -> do
               typeOf main `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 1] (T.AlgebraicType "Bool")
-              typeOf oddFun `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 1] (T.AlgebraicType "Bool")
+              typeOf oddFun `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 10] (T.AlgebraicType "Bool")
           other -> unexpected other

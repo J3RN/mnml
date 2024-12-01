@@ -5,6 +5,7 @@ module MNML
     , moduleDefCache
     , nextTypeId
     , stateModules
+    , typedValueCache
     , valueConstraintsCache
     , valueDefCache
     , varIdPlusPlus
@@ -17,6 +18,7 @@ import qualified Data.Map            as Map
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, (^.))
 import qualified MNML.AST.Span       as SAST
+import qualified MNML.AST.Type       as TAST
 import           MNML.Base           (QualifiedValueReference)
 import qualified MNML.Constraint     as C
 import           MNML.Type           (Type)
@@ -34,6 +36,8 @@ type ValueDefCache = Cache QualifiedValueReference SAST.Expr
 
 type ValueConstraintsCache = Cache QualifiedValueReference (Type, [C.Constraint])
 
+type TypedValueCache = Cache QualifiedValueReference TAST.Expr
+
 data CompilerState
   = CompilerState
       { _modules               :: Modules
@@ -41,6 +45,7 @@ data CompilerState
       , _moduleDefCache        :: ModuleDefCache
       , _valueDefCache         :: ValueDefCache
       , _valueConstraintsCache :: ValueConstraintsCache
+      , _typedValueCache       :: TypedValueCache
       }
   deriving (Eq, Show)
 
@@ -52,6 +57,7 @@ emptyState =
     , _moduleDefCache = Map.empty
     , _valueDefCache = Map.empty
     , _valueConstraintsCache = Map.empty
+    , _typedValueCache = Map.empty
     }
 
 -- Assorted lenses
@@ -70,6 +76,9 @@ valueDefCache = lens _valueDefCache (\cs vdc -> cs {_valueDefCache = vdc})
 
 valueConstraintsCache :: Lens' CompilerState ValueConstraintsCache
 valueConstraintsCache = lens _valueConstraintsCache (\cs vcc -> cs {_valueConstraintsCache = vcc})
+
+typedValueCache :: Lens' CompilerState TypedValueCache
+typedValueCache = lens _typedValueCache (\cs tvc -> cs {_typedValueCache = tvc})
 
 -- Not a great name, but
 varIdPlusPlus :: State CompilerState Type.VarId

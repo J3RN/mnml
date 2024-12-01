@@ -1,6 +1,6 @@
 module MNML.Constrain
-    ( ConstraintError
-    , TypedValueDef
+    ( ConstrainRes (..)
+    , ConstraintError
     , valueConstraints
     ) where
 
@@ -14,8 +14,7 @@ import qualified Data.Map            as Map
 import qualified Data.Set            as Set
 import           Data.Text           (Text)
 import           Lens.Micro          (Lens', lens, over, set)
-import           MNML                (CompilerState (..),
-                                      QualifiedValueReference, varIdPlusPlus)
+import           MNML                (CompilerState (..), varIdPlusPlus)
 import           MNML.AST.Span       (spanOf)
 import qualified MNML.AST.Span       as SAST
 import           MNML.AST.Type       (typeOf)
@@ -28,8 +27,6 @@ import qualified MNML.Type           as T
 type Bindings = Map Text T.Type
 
 type PendingType = (QualifiedValueReference, T.Type, SAST.SourceSpan)
-
-type TypedValueDef = (QualifiedValueReference, TAST.Expr)
 
 data ConstraintError
   = UnknownConstructor Text -- SAST.SourceSpan
@@ -99,8 +96,9 @@ constrain :: SAST.Expr -> Constrain (TAST.Expr, [C.Constraint])
 constrain (SAST.EVar name spanA) = do
   lookupRes <- gets ((!? name) . _bindings)
   case lookupRes of
-    -- The presence of a var doesn't inform it's type
+    -- If it's bound, we "know" its type
     Just t -> return (TAST.EVar name (spanToSpanType spanA t), [])
+    -- Otherwise, this must be a reference.  Give it a type var and add it to the queue for later.
     Nothing -> do
       newTVar <- freshTypeVar name []
       modu <- gets _module
@@ -331,37 +329,25 @@ moduleNamedType modu typeName = do
           )
           defs
 
+data ConstrainRes
+  = ConstrainRes
+      { _typedExpr     :: TAST.Expr
+      , _constraints   :: [C.Constraint]
+        -- UGH
+      , _pendingTypes' :: [(QualifiedValueReference, T.Type, SAST.SourceSpan)]
+      }
+
 valueConstraints ::
-  QualifiedValueReference ->
-  State CompilerState (Either [ConstraintError] ([TypedValueDef], [C.Constraint]))
+  QualifiedValueReference -> State CompilerState (Either [ConstraintError] ConstrainRes)
 valueConstraints qvr@(modu, _) = do
   res <$> runStateT (valueConstraints' qvr) (initialEnv modu)
   where
-    res ::
-      (([TypedValueDef], [C.Constraint]), ConstrainEnv) ->
-      Either [ConstraintError] ([TypedValueDef], [C.Constraint])
-    res (t, ConstrainEnv {_errors = []})   = Right t
+    valueConstraints' :: QualifiedValueReference -> Constrain (Maybe (TAST.Expr, [C.Constraint]))
+    valueConstraints' qvr' = do
+      def <- lift (P.valueDef qvr')
+      case def of
+        Right expr -> Just <$> constrain expr
+        Left err   -> addError (ParseError err) $> Nothing
+    res :: (Maybe (TAST.Expr, [C.Constraint]), ConstrainEnv) -> Either [ConstraintError] ConstrainRes
+    res (Just (t, cs), ConstrainEnv {_errors = [], _pendingTypes = pt}) = Right (ConstrainRes {_typedExpr = t, _constraints = cs, _pendingTypes' = pt})
     res (_, ConstrainEnv {_errors = errs}) = Left errs
-
-valueConstraints' :: QualifiedValueReference -> Constrain ([TypedValueDef], [C.Constraint])
-valueConstraints' qvr@(modu, valName) = do
-  def <- lift (P.valueDef qvr)
-  case def of
-    Right expr -> do
-      modify (\s -> s {_module = modu, _pendingTypes = []})
-      (expr', cs) <- constrain expr
-      pTypes <- gets _pendingTypes
-      -- TODO: WARNING: This is a trick for circular references but *only works in the same module*
-      modify (\s -> s {_bindings = Map.insert valName (typeOf expr') (_bindings s)})
-      foldM foldPendingType ([(qvr, expr')], cs) pTypes
-    Left err -> addError (ParseError err) $> ([], [])
-  where
-    foldPendingType ::
-      ([TypedValueDef], [C.Constraint]) -> PendingType -> Constrain ([TypedValueDef], [C.Constraint])
-    foldPendingType (tvds, cs) (qvr', t, spanA) = do
-      (tvds', cs') <- valueConstraints' qvr'
-      case tvds' of
-        [] -> return (tvds ++ tvds', cs ++ cs')
-        (_, e) : _ ->
-          let t' = typeOf e
-           in return (tvds ++ tvds', C.CEqual spanA t t' : cs ++ cs')
