@@ -22,13 +22,15 @@ import qualified MNML.Constraint     as C
 import           MNML.Type           (Type)
 import qualified MNML.Type           as Type
 
--- The compiler state contains caches, essentially
+-- The compiler state contains caches and the type variable counter
 
-type Modules = Map Text Text
+type Cache = Map
 
-type ModuleDefCache = Map Text [SAST.Definition]
+type Modules = Cache Text Text
 
-type ValueDefCache = Map QualifiedValueReference SAST.Expr
+type ModuleDefCache = Cache Text [SAST.Definition]
+
+type ValueDefCache = Cache QualifiedValueReference SAST.Expr
 
 type ValueConstraintsCache = Cache QualifiedValueReference (Type, [C.Constraint])
 
