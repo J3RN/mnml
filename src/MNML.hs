@@ -11,7 +11,7 @@ module MNML
     , writeThrough
     ) where
 
-import           Control.Monad.State (State, StateT, gets, lift, modify, state)
+import           Control.Monad.State (State, gets, modify, state)
 import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Data.Text           (Text)
@@ -72,8 +72,8 @@ valueConstraintsCache :: Lens' CompilerState ValueConstraintsCache
 valueConstraintsCache = lens _valueConstraintsCache (\cs vcc -> cs {_valueConstraintsCache = vcc})
 
 -- Not a great name, but
-varIdPlusPlus :: StateT m (State CompilerState) Type.VarId
-varIdPlusPlus = lift (state (\s -> (_nextTypeId s, s {_nextTypeId = _nextTypeId s + 1})))
+varIdPlusPlus :: State CompilerState Type.VarId
+varIdPlusPlus = state (\s -> (_nextTypeId s, s {_nextTypeId = _nextTypeId s + 1}))
 
 -- Cache ops
 

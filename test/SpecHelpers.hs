@@ -34,4 +34,3 @@ shouldSpan (SourceSpan {_spanStart = sBeg, _spanEnd = sEnd}) beg end =
                 ]
             )
         )
-

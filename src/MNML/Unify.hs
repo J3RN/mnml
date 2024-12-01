@@ -62,7 +62,7 @@ unify ((CEqual sSpan var1@(T.Var _ traits1 id1) var2@(T.Var _ traits2 id2)) : cs
   | (var1 `implements`) `all` traits2 = bind' sSpan var2 var1 cs
   | (var2 `implements`) `all` traits1 = bind' sSpan var1 var2 cs
   | otherwise = do
-      newVar <- T.Var "x" (traits1 `Set.union` traits2) <$> varIdPlusPlus
+      newVar <- T.Var "x" (traits1 `Set.union` traits2) <$> lift varIdPlusPlus
       bind sSpan var1 newVar cs
         >>= either (return . Left) (bind sSpan var2 newVar)
         >>= either (return . Just) unify
@@ -74,7 +74,7 @@ unify ((CEqual sSpan pRec1@(T.PartialRecord fieldSpec1 _) pRec2@(T.PartialRecord
   let commonFieldCs = commonFieldConstraints sSpan fieldSpec1 fieldSpec2
       supersetFieldSpec = fieldUnion fieldSpec1 fieldSpec2
    in do
-        supersetPartialRecord <- T.PartialRecord supersetFieldSpec <$> varIdPlusPlus
+        supersetPartialRecord <- T.PartialRecord supersetFieldSpec <$> lift varIdPlusPlus
         bind sSpan pRec1 supersetPartialRecord cs
           >>= either (return . Left) (bind sSpan pRec2 supersetPartialRecord)
           >>= either (return . Just) (unify . (++ commonFieldCs))

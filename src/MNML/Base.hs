@@ -5,4 +5,3 @@ module MNML.Base
 import           Data.Text (Text)
 
 type QualifiedValueReference = (Text, Text)
-

@@ -241,10 +241,10 @@ constrainPattern (SAST.PLiteral lit spanA) = do
   return (TAST.PLiteral lit' (spanToSpanType spanA (typeOf lit')), [])
 
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
-freshTypeVar name traits = T.Var name (Set.fromList traits) <$> varIdPlusPlus
+freshTypeVar name traits = T.Var name (Set.fromList traits) <$> lift varIdPlusPlus
 
 freshPartialRecord :: T.FieldSpec -> Constrain T.Type
-freshPartialRecord fields = T.PartialRecord fields <$> varIdPlusPlus
+freshPartialRecord fields = T.PartialRecord fields <$> lift varIdPlusPlus
 
 -- Runs a function within its own scope (inheriting the existing scope)
 withNewScope :: Constrain a -> Constrain a
