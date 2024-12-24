@@ -69,7 +69,6 @@ data Type
   | TFloat SourceSpanType
   | TChar SourceSpanType
   | TString SourceSpanType
-  | TNamedType Text SourceSpanType -- "User"
   | TList Type SourceSpanType -- TInt
   | TFun [Type] Type SourceSpanType -- [TInt, TInt] -> TInt
   | TRecord [(Text, Type)] SourceSpanType -- [("name", TString), ...]
@@ -144,23 +143,21 @@ instance Spanned Pattern where
 
 -- Haha
 instance Typed Type where
-  typeOf (TInt (SourceSpanType {_type = t}))         = t
-  typeOf (TFloat (SourceSpanType {_type = t}))       = t
-  typeOf (TChar (SourceSpanType {_type = t}))        = t
-  typeOf (TString (SourceSpanType {_type = t}))      = t
-  typeOf (TNamedType _ (SourceSpanType {_type = t})) = t
-  typeOf (TList _ (SourceSpanType {_type = t}))      = t
-  typeOf (TFun _ _ (SourceSpanType {_type = t}))     = t
-  typeOf (TRecord _ (SourceSpanType {_type = t}))    = t
-  typeOf (TVar _ (SourceSpanType {_type = t}))       = t
+  typeOf (TInt (SourceSpanType {_type = t}))      = t
+  typeOf (TFloat (SourceSpanType {_type = t}))    = t
+  typeOf (TChar (SourceSpanType {_type = t}))     = t
+  typeOf (TString (SourceSpanType {_type = t}))   = t
+  typeOf (TList _ (SourceSpanType {_type = t}))   = t
+  typeOf (TFun _ _ (SourceSpanType {_type = t}))  = t
+  typeOf (TRecord _ (SourceSpanType {_type = t})) = t
+  typeOf (TVar _ (SourceSpanType {_type = t}))    = t
 
 instance Spanned Type where
-  spanOf (TInt s)         = sourceSpanTypeToSourceSpan s
-  spanOf (TFloat s)       = sourceSpanTypeToSourceSpan s
-  spanOf (TChar s)        = sourceSpanTypeToSourceSpan s
-  spanOf (TString s)      = sourceSpanTypeToSourceSpan s
-  spanOf (TNamedType _ s) = sourceSpanTypeToSourceSpan s
-  spanOf (TList _ s)      = sourceSpanTypeToSourceSpan s
-  spanOf (TFun _ _ s)     = sourceSpanTypeToSourceSpan s
-  spanOf (TRecord _ s)    = sourceSpanTypeToSourceSpan s
-  spanOf (TVar _ s)       = sourceSpanTypeToSourceSpan s
+  spanOf (TInt s)      = sourceSpanTypeToSourceSpan s
+  spanOf (TFloat s)    = sourceSpanTypeToSourceSpan s
+  spanOf (TChar s)     = sourceSpanTypeToSourceSpan s
+  spanOf (TString s)   = sourceSpanTypeToSourceSpan s
+  spanOf (TList _ s)   = sourceSpanTypeToSourceSpan s
+  spanOf (TFun _ _ s)  = sourceSpanTypeToSourceSpan s
+  spanOf (TRecord _ s) = sourceSpanTypeToSourceSpan s
+  spanOf (TVar _ s)    = sourceSpanTypeToSourceSpan s

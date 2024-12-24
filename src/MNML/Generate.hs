@@ -72,7 +72,6 @@ generateBody state ((m, valName), TAST.ELit lit _span) =
 -- TAST.TChar SourceSpanType
 -- TAST.TString SourceSpanType
 -- This one actually shouldn't exist
--- TAST.TNamedType Text SourceSpanType
 -- TAST.TList Type SourceSpanType
 -- TAST.TFun [Type] Type SourceSpanType
 -- TAST.TRecord [(Text, Type)] SourceSpanType
