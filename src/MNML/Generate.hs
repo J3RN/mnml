@@ -2,15 +2,15 @@ module MNML.Generate
     ( generate
     ) where
 
-import           Control.Monad.State (State)
+import           Control.Monad       (foldM)
+import           Control.Monad.State (State, execState, modify)
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
 import           Lens.Micro          (Lens', lens, over)
 import           MNML                (CompilerState)
 import           MNML.AST.Type       (typeOf)
 import qualified MNML.AST.Type       as TAST
-import           MNML.Base           (QualfifiedValueReference)
-import qualified MNML.Constrain      as C
+import           MNML.Base           (QualifiedValueReference)
 import qualified MNML.Core           as Core
 import qualified MNML.Type           as T
 import qualified MNML.Unify          as Unify
@@ -21,6 +21,8 @@ newtype GenerateError
 
 newtype GenerateState
   = GenerateState { _modu :: Core.Module }
+
+type Generate = State GenerateState
 
 modu :: Lens' GenerateState Core.Module
 modu = lens _modu (\gs m -> gs {_modu = m})
@@ -34,56 +36,48 @@ generate ::
   State CompilerState (Either [GenerateError] Text)
 generate qvr = do
   typeRes <- Unify.valueType qvr
-  case typeRes of
-    Left errs -> return (Left (UnificationError <$> errs))
-    Right tvds ->
-      return
-        ( Right
-            ((Text.pack . show . _modu) (foldl generateValue initialState tvds))
-        )
+  return $ case typeRes of
+             Left errs -> Left (UnificationError <$> errs)
+             Right tvds -> Right (Text.pack (show (_modu (execState (mapM generateValue tvds) initialState))))
 
-generateValue :: GenerateState -> C.TypedValueDecl -> GenerateState
-generateValue state tvd@(_, value) =
+-- TODO: Maybe return the function and have the caller place it in the module
+generateValue :: TAST.TypedValueDef -> Generate ()
+generateValue tvd@(_, value) = do
+  body <- generateBody tvd
   let retType = typeToType (typeOf value)
       f =
         Core.Function
           { _params = []
           , _locals = []
           , _return = retType
-          , _body = generateBody state tvd
+          , _body = body
           }
-   in over (modu . Core.functions) (f :) state
+  modify (over (modu . Core.functions) (f :))
 
-generateBody :: GenerateState -> C.TypedValueDecl -> [Core.Expr]
+generateBody :: TAST.TypedValueDef -> Generate [Core.Expr]
 -- A value being a var can only mean that it's a local reference
-generateBody state ((m, _), TAST.EVar name _) =
-  [ Core.Expr
-      { _callee = "call"
-      , _args = [Left (qvrToName (m, name))]
-      }
-  ]
-generateBody state ((m, valName), TAST.EConstructor name (TAST.SourceSpanType {_type = t})) = _
-generateBody state ((m, valName), TAST.ELit lit _span) =
+generateBody ((m, _), TAST.EVar name _) = return [ Core.Expr { _callee = "call" , _args = [Left (qvrToName (m, name))]}]
+generateBody ((m, valName), TAST.EConstructor name (TAST.SourceSpanType {_type = t})) = _
+generateBody ((m, valName), TAST.ELit lit _span) =
   case lit of
-    TAST.LInt i _ -> [Core.Expr {_callee = "i32.const", _args = [Left (Text.pack (show i))]}]
-    TAST.LFloat f _ -> [Core.Expr {_callee = "f64.const", _args = [Left (Text.pack (show f))]}]
--- TODO: For all others, promote to data section; use reference
--- Except type variables, dunno what to do about that.
--- TAST.TChar SourceSpanType
--- TAST.TString SourceSpanType
--- This one actually shouldn't exist
--- TAST.TList Type SourceSpanType
--- TAST.TFun [Type] Type SourceSpanType
--- TAST.TRecord [(Text, Type)] SourceSpanType
--- Perhaps this one also
--- TAST.TVar Text SourceSpanType
+    TAST.LInt i _ -> return [Core.Expr {_callee = "i32.const", _args = [Left (Text.pack (show i))]}]
+    TAST.LFloat f _ -> return [Core.Expr {_callee = "f64.const", _args = [Left (Text.pack (show f))]}]
+    -- TODO: For all others, promote to data section; use reference
+    -- Except type variables, dunno what to do about that.
+    -- TAST.TChar SourceSpanType
+    -- TAST.TString SourceSpanType
+    -- TAST.TList Type SourceSpanType
+    -- TAST.TFun [Type] Type SourceSpanType
+    -- TAST.TRecord [(Text, Type)] SourceSpanType
+    -- Perhaps this one also
+    -- TAST.TVar Text SourceSpanType
 
-generateBody state ((m, valName), TAST.ELambda params body (TAST.SourceSpanType {_type = t})) = _
-generateBody state ((m, valName), TAST.EApp fun args (TAST.SourceSpanType {_type = t})) = _
-generateBody state ((m, valName), TAST.ECase subj branches (TAST.SourceSpanType {_type = t})) = _
-generateBody state ((m, valName), TAST.EBinary op left right (TAST.SourceSpanType {_type = t})) = _
-generateBody state ((m, valName), TAST.ERecord fields (TAST.SourceSpanType {_type = t})) = _
-generateBody state ((m, valName), TAST.EList elems (TAST.SourceSpanType {_type = t})) = _
+generateBody ((m, valName), TAST.ELambda params body (TAST.SourceSpanType {_type = t})) = _
+generateBody ((m, valName), TAST.EApp fun args (TAST.SourceSpanType {_type = t})) = _
+generateBody ((m, valName), TAST.ECase subj branches (TAST.SourceSpanType {_type = t})) = _
+generateBody ((m, valName), TAST.EBinary op left right (TAST.SourceSpanType {_type = t})) = _
+generateBody ((m, valName), TAST.ERecord fields (TAST.SourceSpanType {_type = t})) = _
+generateBody ((m, valName), TAST.EList elems (TAST.SourceSpanType {_type = t})) = _
 
 qvrToName :: QualifiedValueReference -> Text
 qvrToName (m, valName) = mconcat [m, ".", valName]
