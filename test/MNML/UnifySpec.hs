@@ -7,7 +7,7 @@ import qualified Data.Map            as Map
 import qualified Data.Set            as Set
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
-import           MNML                (CompilerState (..), emptyState)
+import           MNML.CompilerState  (CompilerState (..), emptyState)
 import           MNML.AST.Type       (Typed (..), TypedValueDef)
 import qualified MNML.AST.Type       as TAST
 import qualified MNML.Type           as T

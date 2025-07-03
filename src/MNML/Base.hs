@@ -1,7 +1,13 @@
 module MNML.Base
-    ( QualifiedValueReference
+    ( ModName
+    , QualifiedReference
+    , ValName
     ) where
 
 import           Data.Text (Text)
 
-type QualifiedValueReference = (Text, Text)
+type ModName = Text
+
+type ValName = Text
+
+type QualifiedReference = (Text, Text)

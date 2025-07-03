@@ -8,7 +8,7 @@ import           Data.Either         (fromRight)
 import qualified Data.Map            as Map
 import qualified Data.Text           as Text
 import qualified Data.Text.IO        as TIO
-import           MNML                (CompilerState (..), Modules, emptyState)
+import           MNML.CompilerState  (CompilerState (..), Modules, emptyState)
 import           MNML.Generate       (generate)
 import           System.Directory    (listDirectory)
 import           System.FilePath     (dropExtension, isExtensionOf)

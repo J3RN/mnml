@@ -1,6 +1,5 @@
 module MNML.Unify
-    ( UnificationError (..)
-    , valueType
+    ( valueType
     ) where
 
 import           Control.Monad       (foldM)
@@ -14,24 +13,14 @@ import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Data.Set            (Set)
 import qualified Data.Set            as Set
-import           Lens.Micro          (over, (^.))
-import           MNML                (CompilerState (..), typedValueCache,
-                                      varIdPlusPlus)
 import qualified MNML.AST.Span       as SAST
 import qualified MNML.AST.Type       as TAST
-import           MNML.Base           (QualifiedValueReference)
+import           MNML.Base           (QualifiedReference)
+import           MNML.CompilerState  (CompilerState (..), varIdPlusPlus)
 import qualified MNML.Constrain      as C
 import           MNML.Constraint     (Constraint (..))
+import           MNML.Error          (Error (UnificationError))
 import qualified MNML.Type           as T
-
-data UnificationError
-  = ArgumentLengthMismatch SAST.SourceSpan
-  | UnificationError T.Type T.Type SAST.SourceSpan
-  | OccursError T.Type T.Type SAST.SourceSpan
-  | ExpectedTraits T.Type (Set T.Trait) SAST.SourceSpan
-  | ExpectedFields T.Type T.FieldSpec SAST.SourceSpan
-  | ConstraintError C.ConstraintError
-  deriving (Eq, Show)
 
 type Subst = Map T.Type T.Type
 
@@ -95,7 +84,7 @@ unify ((CEqual sSpan (T.PartialRecord fieldSpec1 _) rec@(T.Record fieldSpec2)) :
     isFieldSubset :: T.FieldSpec -> T.FieldSpec -> Bool
     isFieldSubset = List.isSubsequenceOf `on` (List.sort . Map.keys)
 -- Swap
-unify ((CEqual sSpan t var@(T.Var _ _ _)) : cs) = unify (CEqual sSpan var t : cs)
+unify ((CEqual sSpan t var@(T.Var {})) : cs) = unify (CEqual sSpan var t : cs)
 unify ((CEqual sSpan t pRec@(T.PartialRecord _ _)) : cs) = unify (CEqual sSpan pRec t : cs)
 -- Conflict
 unify ((CEqual sSpan t1 t2) : _) = return (Just (UnificationError t1 t2 sSpan))
@@ -149,7 +138,7 @@ occursIn var (T.Record fieldSpec) = any (var `occursIn`) fieldSpec
 occursIn _ (T.AlgebraicType _) = False
 occursIn var (T.TypeAlias _ t) = occursIn var t
 occursIn var1 var2 | var1 == var2 = True
-occursIn _ (T.Var _ _ _) = False
+occursIn _ (T.Var {}) = False
 occursIn var (T.PartialRecord fieldSpec _) = any (var `occursIn`) fieldSpec
 
 applySubst :: (T.Type, T.Type) -> T.Type -> T.Type
@@ -163,25 +152,19 @@ applySubst subst (T.Record fieldSpec) = T.Record (Map.map (applySubst subst) fie
 applySubst _ (T.AlgebraicType name) = T.AlgebraicType name
 applySubst subst (T.TypeAlias name t) = T.TypeAlias name (applySubst subst t)
 applySubst (var1, rep) var2 | var1 == var2 = rep
-applySubst _ var@(T.Var _ _ _) = var
+applySubst _ var@(T.Var {}) = var
 applySubst subst (T.PartialRecord fieldSpec prId) = T.PartialRecord (Map.map (applySubst subst) fieldSpec) prId
 
 valueType ::
-  QualifiedValueReference -> State CompilerState (Either [UnificationError] [TAST.TypedValueDef])
+  QualifiedReference -> ExceptT [UnificationError] (State CompilerState) [TAST.TypedValueDef]
 valueType qvr = do
-  cacheResult <- gets ((!? qvr) . (^. typedValueCache))
-  case cacheResult of
-    Just val -> return (Right [(qvr, val)])
-    Nothing -> do
-      unificationRes <- valueType' qvr
-      case unificationRes of
-        Right tvds -> mapM_ setCache tvds $> Right (List.nubBy ((==) `on` fst) tvds)
-        Left errs -> return (Left errs)
+    unificationRes <- valueType' qvr
+    case unificationRes of
+      Right tvds -> mapM_ setCache tvds $> Right (List.nubBy ((==) `on` fst) tvds)
+      Left errs -> return (Left errs)
   where
-    setCache :: TAST.TypedValueDef -> State CompilerState ()
-    setCache (qvr', expr) = modify (over typedValueCache (Map.insert qvr' expr))
     valueType' ::
-      QualifiedValueReference -> State CompilerState (Either [UnificationError] [TAST.TypedValueDef])
+      QualifiedReference -> State CompilerState (Either [UnificationError] [TAST.TypedValueDef])
     valueType' qvr' = do
       constraintsRes <- C.valueConstraints qvr'
       case constraintsRes of
@@ -201,7 +184,7 @@ valueType qvr = do
         Left constrainErrs -> return (Left (map ConstraintError constrainErrs))
     foldDep ::
       Either [UnificationError] ([Constraint], [TAST.TypedValueDef]) ->
-      (QualifiedValueReference, T.Type, SAST.SourceSpan) ->
+      (QualifiedReference, T.Type, SAST.SourceSpan) ->
       State CompilerState (Either [UnificationError] ([Constraint], [TAST.TypedValueDef]))
     foldDep (Right (cs, tvds)) (qvr'', t, s) = do
       typedExprRes <- valueType qvr''

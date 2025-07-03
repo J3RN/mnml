@@ -7,8 +7,8 @@ import           Data.Bifunctor      (first)
 import qualified Data.Map            as Map
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
-import           MNML                (CompilerState (..), emptyState)
 import           MNML.AST.Span
+import           MNML.CompilerState  (CompilerState (..), emptyState)
 import           MNML.Parse
 import           SpecHelpers
 import           Test.Hspec

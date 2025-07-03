@@ -7,10 +7,10 @@ import           Control.Monad.State (State, execState, modify)
 import           Data.Text           (Text)
 import qualified Data.Text           as Text
 import           Lens.Micro          (Lens', lens, over)
-import           MNML                (CompilerState)
 import           MNML.AST.Type       (typeOf)
 import qualified MNML.AST.Type       as TAST
-import           MNML.Base           (QualifiedValueReference)
+import           MNML.Base           (QualifiedReference)
+import           MNML.CompilerState  (CompilerState)
 import qualified MNML.Core           as Core
 import qualified MNML.Type           as T
 import qualified MNML.Unify          as Unify
@@ -32,7 +32,7 @@ initialState =
   GenerateState {_modu = Core.Module {_memories = [], _functions = []}}
 
 generate ::
-  QualifiedValueReference ->
+  QualifiedReference ->
   State CompilerState (Either [GenerateError] Text)
 generate qvr = do
   typeRes <- Unify.valueType qvr
@@ -79,7 +79,7 @@ generateBody ((m, valName), TAST.EBinary op left right (TAST.SourceSpanType {_ty
 generateBody ((m, valName), TAST.ERecord fields (TAST.SourceSpanType {_type = t})) = _
 generateBody ((m, valName), TAST.EList elems (TAST.SourceSpanType {_type = t})) = _
 
-qvrToName :: QualifiedValueReference -> Text
+qvrToName :: QualifiedReference -> Text
 qvrToName (m, valName) = mconcat [m, ".", valName]
 
 typeToType :: T.Type -> Core.Type

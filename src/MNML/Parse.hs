@@ -1,84 +1,39 @@
 module MNML.Parse
-    ( MNML.Parse.ParseError
-    , moduleDef
-    , valueDef
+    ( parse
     ) where
 
-import           Control.Monad       (foldM)
-import           Control.Monad.State (State, gets)
-import           Data.Functor        (($>))
-import qualified Data.Map            as Map
-import           Data.Maybe          (listToMaybe, mapMaybe)
-import           Data.Text           (Text)
-import qualified Data.Text           as Text
-import           MNML                (CompilerState (..), moduleDefCache,
-                                      valueDefCache, writeThrough)
-import           MNML.AST.Span       (Definition (..), Expr (..), Literal (..),
-                                      Operator (..), Pattern (..),
-                                      SourceSpan (..), Type (..))
-import           MNML.Base           (QualifiedValueReference)
-import           Text.Parsec         (ParseError, ParsecT, alphaNum, char, eof,
-                                      getPosition, lower, many, many1, manyTill,
-                                      oneOf, option, runParserT, sepBy1, space,
-                                      try, upper, (<|>))
-import qualified Text.Parsec.Token   as Tok
+import           Control.Monad        (foldM)
+import           Control.Monad.Except (ExceptT, MonadError (throwError))
+import           Control.Monad.State  (State)
+import           Control.Monad.Trans  (lift)
+import           Data.Functor         (($>))
+import           Data.Text            (Text)
+import qualified Data.Text            as Text
+import           MNML.AST.Span        (Definition (..), Expr (..), Literal (..),
+                                       Operator (..), Pattern (..),
+                                       SourceSpan (..), Type (..))
+import           MNML.CompilerState   (CompilerState (..))
+import           MNML.Error           (Error (ParseError), ParseError (..))
+import           Text.Parsec          (ParsecT, alphaNum, char, eof,
+                                       getPosition, lower, many, many1,
+                                       manyTill, oneOf, option, runParserT,
+                                       sepBy1, space, try, upper, (<|>))
+import qualified Text.Parsec.Token    as Tok
 
 -- Data Types
 
 -- This used to be useful and now is not
 type ParseEnv = ()
 
+-- I also do not believe that the lifted monad (State CompilerState) is used anymore.  For simplicity, we could consider removal.
 type Parser = ParsecT Text ParseEnv (State CompilerState)
 
-data ParseError
-  = ParseError Text.Parsec.ParseError
-  | ModuleNotFound Text
-  | ValueNotFound QualifiedValueReference
-  deriving (Eq, Show)
-
--- Client API
-
-valueDef :: QualifiedValueReference -> State CompilerState (Either MNML.Parse.ParseError Expr)
-valueDef qvr = writeThrough valueDefCache findValDef qvr
-  where
-    findValDef (m, v) = do
-      mDef <- moduleDef m
-      return (mDef >>= findDef v)
-    findDef name defs =
-      maybe
-        (Left (ValueNotFound qvr))
-        Right
-        ( findMaybe
-            ( \case
-                (ValueDef n expr _) | n == name -> Just expr
-                _ -> Nothing
-            )
-            defs
-        )
-
-moduleDef :: Text -> State CompilerState (Either MNML.Parse.ParseError [Definition])
-moduleDef = writeThrough moduleDefCache parse
-
--- Function to run the parser
-
-parse :: Text -> State CompilerState (Either MNML.Parse.ParseError [Definition])
-parse modu = do
-  moduleTextResult <- gets ((Map.!? modu) . _modules)
-  case moduleTextResult of
-    Just rawCode ->
-      either (Left . MNML.Parse.ParseError) Right
-        <$> runParserT
-          MNML.Parse.mod
-          ()
-          (Text.unpack (modu <> ".mnml"))
-          rawCode
-    Nothing ->
-      return (Left (ModuleNotFound modu))
-
--- Helpers
-
-findMaybe :: (a -> Maybe b) -> [a] -> Maybe b
-findMaybe f = listToMaybe . mapMaybe f
+parse :: Text -> ExceptT Error (State CompilerState) [Definition]
+parse rawCode = do
+  res <- lift (runParserT MNML.Parse.mod () "load" rawCode)
+  case res of
+    Left pError -> throwError (ParseError (ParsecError pError))
+    Right defs  -> return defs
 
 -- Helpers
 
