@@ -1,30 +1,23 @@
 module MNML.Load
     ( load
     ) where
-import           Control.Monad.State (State)
-import           Data.Text           (Text)
-import           MNML.Base           (QualifiedReference)
-import           MNML.CompilerState  (CompilerState)
-import           MNML.Constrain      (ConstraintError)
-import qualified MNML.Constraint     as Constraint
-import           MNML.Parse          (ParseError)
-import qualified MNML.Parse          as Parse
-import           MNML.Unify          (UnificationError)
-import qualified MNML.Unify          as Unify
 
-data Error
-  = ParseError ParseError
-  | UnificationError UnificationError
+import           Control.Monad.Except (ExceptT)
+import           Control.Monad.State  (State)
+import           Data.Text            (Text)
+import           MNML.Base            (QualifiedReference)
+import           MNML.CompilerState   (CompilerState)
+import           MNML.Constrain       (ConstraintError)
+import qualified MNML.Constraint      as Constraint
+import           MNML.Error           (Error)
+import           MNML.Parse           (ParseError)
+import qualified MNML.Parse           as Parse
+import qualified MNML.Store           as Store
+import qualified MNML.Unify           as Unify
 
-load :: Text -> State CompilerState (Either Error ())
+load :: Text -> ExceptT Error (State CompilerState) ()
 load code = do
-    parseRes <- Parse.parse code
-    case parseRes of
-        Left pError -> return (Left (ParseError pError))
-        Right defs  -> do
-            constraintRes <- Constrain.constain defs
-            case constraintRes of
-                Left cError          -> return (Left (ConstraintError cError))
-                Right constraintSets -> _
-
-parse :: Text -> State CompilerState
+  sast <- Parse.parse code
+  constraintRes <- Constrain.constain defs
+  unifyRes <- Unify.unify constraint
+  Store.store unifyRes

@@ -3,7 +3,7 @@ module MNML.Parse
     ) where
 
 import           Control.Monad        (foldM)
-import           Control.Monad.Except (ExceptT, MonadError (throwError))
+import           Control.Monad.Except (MonadError (throwError))
 import           Control.Monad.State  (State)
 import           Control.Monad.Trans  (lift)
 import           Data.Functor         (($>))
@@ -13,7 +13,8 @@ import           MNML.AST.Span        (Definition (..), Expr (..), Literal (..),
                                        Operator (..), Pattern (..),
                                        SourceSpan (..), Type (..))
 import           MNML.CompilerState   (CompilerState (..))
-import           MNML.Error           (Error (ParseError), ParseError (..))
+import           MNML.Error           (Error (ParseError), Fallible,
+                                       ParseError (..))
 import           Text.Parsec          (ParsecT, alphaNum, char, eof,
                                        getPosition, lower, many, many1,
                                        manyTill, oneOf, option, runParserT,
@@ -28,11 +29,11 @@ type ParseEnv = ()
 -- I also do not believe that the lifted monad (State CompilerState) is used anymore.  For simplicity, we could consider removal.
 type Parser = ParsecT Text ParseEnv (State CompilerState)
 
-parse :: Text -> ExceptT Error (State CompilerState) [Definition]
+parse :: Text -> Fallible [Definition]
 parse rawCode = do
   res <- lift (runParserT MNML.Parse.mod () "load" rawCode)
   case res of
-    Left pError -> throwError (ParseError (ParsecError pError))
+    Left pError -> throwError [ParseError (ParsecError pError)]
     Right defs  -> return defs
 
 -- Helpers

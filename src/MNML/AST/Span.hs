@@ -21,7 +21,7 @@ data SourceSpan
 
 data Definition
   = TypeDef Text [(Text, [Type])] SourceSpan -- "MyType = Foo(String) | Bar(Int, String)"
-  | TypeAliasDef Text Type SourceSpan -- "alias  {name: String} as User" or "alias Int as Price"
+  | TypeAliasDef Text Type SourceSpan -- "alias {name: String} as User" or "alias Int as Price"
   | ValueDef Text Expr SourceSpan
   deriving (Eq, Show)
 

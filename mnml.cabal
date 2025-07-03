@@ -29,11 +29,16 @@ library
       MNML.AST.Span
       MNML.AST.Type
       MNML.Base
+      MNML.CompilerState
       MNML.Constrain
       MNML.Constraint
       MNML.Core
+      MNML.Error
       MNML.Generate
+      MNML.Interpret
+      MNML.Load
       MNML.Parse
+      MNML.Store
       MNML.Type
       MNML.Unify
   other-modules:

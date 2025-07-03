@@ -1,17 +1,23 @@
 module MNML.Error
     ( ConstrainError (..)
     , Error (..)
+    , Fallible
     , ParseError (..)
     , RuntimeError (..)
     , UnificationError (..)
     ) where
 
-import           Data.Set      (Set)
-import           Data.Text     (Text)
-import qualified MNML.AST.Span as SAST
-import           MNML.Base     (QualifiedReference)
-import qualified MNML.Type     as T
-import qualified Text.Parsec   as Parsec
+import           Control.Monad.Except (ExceptT)
+import           Control.Monad.State  (State)
+import           Data.Set             (Set)
+import           Data.Text            (Text)
+import qualified MNML.AST.Span        as SAST
+import           MNML.Base            (QualifiedReference)
+import           MNML.CompilerState   (CompilerState)
+import qualified MNML.Type            as T
+import qualified Text.Parsec          as Parsec
+
+type Fallible a = ExceptT [Error] (State CompilerState) a
 
 data Error
   = ParseError ParseError
