@@ -28,8 +28,7 @@ data SourceSpanType
   deriving (Eq, Show)
 
 data Definition
-  = TypeDef Text [(Text, [Type])] SourceSpanType -- "MyType = Foo(String) | Bar(Int, String)"
-  | TypeAliasDef Text Type SourceSpanType -- "alias  {name: String} as User" or "alias Int as Price"
+  = TypeDef Text Type SourceSpanType
   | ValueDef Text Expr SourceSpanType
   deriving (Eq, Show)
 
@@ -82,14 +81,12 @@ class Typed a where
   typeOf :: a -> T.Type
 
 instance Typed Definition where
-  typeOf (TypeDef _ _ (SourceSpanType {_type = t}))      = t
-  typeOf (TypeAliasDef _ _ (SourceSpanType {_type = t})) = t
-  typeOf (ValueDef _ _ (SourceSpanType {_type = t}))     = t
+  typeOf (TypeDef _ _ (SourceSpanType {_type = t}))  = t
+  typeOf (ValueDef _ _ (SourceSpanType {_type = t})) = t
 
 instance Spanned Definition where
-  spanOf (TypeDef _ _ s)      = sourceSpanTypeToSourceSpan s
-  spanOf (TypeAliasDef _ _ s) = sourceSpanTypeToSourceSpan s
-  spanOf (ValueDef _ _ s)     = sourceSpanTypeToSourceSpan s
+  spanOf (TypeDef _ _ s)  = sourceSpanTypeToSourceSpan s
+  spanOf (ValueDef _ _ s) = sourceSpanTypeToSourceSpan s
 
 instance Typed Expr where
   typeOf (EVar _ (SourceSpanType {_type = t}))         = t
