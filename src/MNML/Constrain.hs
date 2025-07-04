@@ -3,25 +3,26 @@ module MNML.Constrain
     , constrain
     ) where
 
-import           Control.Monad        (foldM, mapAndUnzipM)
-import           Control.Monad.State  (State, StateT, gets, lift, modify)
-import           Data.Bifunctor       (bimap, second)
-import           Data.Map             (Map, (!?))
-import qualified Data.Map             as Map
-import qualified Data.Set             as Set
-import           Data.Text            (Text)
-import           Lens.Micro           (Lens', lens, over, set)
-import           Lens.Micro.Extras    (view)
-import           MNML.AST.Span        (spanOf)
-import qualified MNML.AST.Span        as SAST
-import           MNML.AST.Type        (typeOf)
-import qualified MNML.AST.Type        as TAST
-import           MNML.Base            (QualifiedReference)
-import           MNML.CompilerState   (CompilerState (..), definitions,
-                                       typeDefinitions, varIdPlusPlus)
-import qualified MNML.Constraint      as C
-import           MNML.Error           (ConstrainError (..), Fallible)
-import qualified MNML.Type            as T
+import           Control.Monad       (foldM, mapAndUnzipM)
+import           Control.Monad.State (State, StateT, gets, lift, modify,
+                                      runStateT)
+import           Data.Bifunctor      (bimap, second)
+import           Data.Map            (Map, (!?))
+import qualified Data.Map            as Map
+import qualified Data.Set            as Set
+import           Data.Text           (Text)
+import           Lens.Micro          (Lens', lens, over, set)
+import           Lens.Micro.Extras   (view)
+import           MNML.AST.Span       (spanOf)
+import qualified MNML.AST.Span       as SAST
+import           MNML.AST.Type       (typeOf)
+import qualified MNML.AST.Type       as TAST
+import           MNML.Base           (QualifiedReference)
+import           MNML.CompilerState  (CompilerState (..), lookupType, lookupVal,
+                                      varIdPlusPlus)
+import qualified MNML.Constraint     as C
+import           MNML.Error          (ConstrainError (..), Fallible)
+import qualified MNML.Type           as T
 
 type Bindings = Map Text T.Type
 
@@ -111,12 +112,13 @@ constrain' (SAST.EVar name spanA) = do
       return (TAST.EVar name (spanToSpanType spanA newTVar), [])
 constrain' (SAST.EConstructor name spanA) = do
   modu <- gets _module
-  expectedTypeRes <- constructorType (modu, name)
+  let qvr = (modu, name)
+  expectedTypeRes <- constructorType qvr
   case expectedTypeRes of
-    Left err -> do
-      t <- giveUp err name
+    Nothing -> do
+      t <- giveUp (UnknownConstructor qvr spanA) name
       return (TAST.EConstructor name (spanToSpanType spanA t), [])
-    Right expectedType -> return (TAST.EConstructor name (spanToSpanType spanA expectedType), [])
+    Just expectedType -> return (TAST.EConstructor name (spanToSpanType spanA expectedType), [])
 constrain' (SAST.ELit lit spanA) = do
   lit' <- litToLit lit
   return (TAST.ELit lit' (spanToSpanType spanA (typeOf lit')), [])
@@ -209,14 +211,15 @@ constrainPattern (SAST.PConstructor name argPatterns spanA) = do
   argCons <- mapM constrainPattern argPatterns
   let argPatterns' = map fst argCons
       argSubCons = concatMap snd argCons
-  funTypeRes <- constructorType (modu, name)
+      qvr = (modu, name)
+  funTypeRes <- constructorType qvr
   (retType, cons) <-
     case funTypeRes of
-      Left err -> (,[]) <$> giveUp err name
-      Right funType@(T.Fun _ _) -> do
+      Nothing -> (,[]) <$> addError (UnknownConstructor qvr spanA)
+      Just funType@(T.Fun _ _) -> do
         retType <- freshTypeVar name []
         return (retType, [C.CEqual spanA (T.Fun (map typeOf argPatterns') retType) funType])
-      Right t -> pure (t, [])
+      Just t -> pure (t, [])
   return (TAST.PConstructor name argPatterns' (spanToSpanType spanA retType), cons ++ argSubCons)
 constrainPattern (SAST.PRecord fieldSpec spanA) = do
   (fieldSpec', fieldConstraints) <- foldM foldRecord ([], []) fieldSpec
@@ -263,11 +266,12 @@ declareVar name = do
   modify (over bindings (Map.insert name newVarType))
   return newVarType
 
-constructorType :: QualifiedReference -> Constrain (Either ConstrainError T.Type)
+constructorType :: QualifiedReference -> Constrain (Maybe T.Type)
 constructorType qvr = do
-  res <- (!? qvr) <$> lift (lift (gets (view definitions)))
-  case res of
-    _ -> _
+  -- Step 1: See if it's in the data being loaded
+  -- TODO
+  -- Step 2: See if it's in the store
+  (typeOf <$>) <$> lift (gets (`lookupVal` qvr))
 
 conTypeFromConstructors ::
   Text -> Text -> [(Text, [SAST.Type])] -> Constrain (Either ConstrainError T.Type)
@@ -286,11 +290,11 @@ typifyConstructor argTypes tName = do
   typifiedTypes <- mapM typify argTypes
   return (T.Fun <$> sequence typifiedTypes <*> return (T.AlgebraicType tName))
 
-typify :: SAST.Type -> Constrain (Either ConstrainError T.Type)
-typify (SAST.TInt _) = return (Right T.Int)
-typify (SAST.TFloat _) = return (Right T.Float)
-typify (SAST.TChar _) = return (Right T.Char)
-typify (SAST.TString _) = return (Right T.String)
+typify :: SAST.Type -> Constrain (Maybe T.Type)
+typify (SAST.TInt _) = return (Just T.Int)
+typify (SAST.TFloat _) = return (Just T.Float)
+typify (SAST.TChar _) = return (Just T.Char)
+typify (SAST.TString _) = return (Just T.String)
 typify (SAST.TNamedType name _) = do
   modName <- gets _module
   moduleNamedType (modName, name)
@@ -303,18 +307,30 @@ typify (SAST.TFun argTypes resType _) = do
 typify (SAST.TRecord fields _) = do
   fieldTypes <- mapM (\(fieldName, t) -> ((fieldName,) <$>) <$> typify t) fields
   return (T.Record . Map.fromList <$> sequence fieldTypes)
-typify (SAST.TVar name _) = Right <$> freshTypeVar name []
+typify (SAST.TVar name _) = Just <$> freshTypeVar name []
 
-moduleNamedType :: QualifiedReference -> Constrain (Either ConstrainError T.Type)
+moduleNamedType :: QualifiedReference -> Constrain (Maybe T.Type)
 moduleNamedType qvr = do
-  typeDefs <- lift . lift $ gets (view typeDefinitions)
-  return (case typeDefs !? qvr of
-            Just t  ->  Right t
-            -- TODO: Fix UnknownType argument
-            Nothing -> Left (UnknownType (snd qvr)))
+  -- Step 1: See if it's in the data being loaded
+  -- TODO
+  -- Step 2: See if it's in the store
+  lift (gets (`lookupType` qvr))
 
 constrain :: [SAST.Definition] -> Fallible ConstrainRes
--- TODO: Figure out module name here
-constrain defs = fmap snd (foldM constrainDef (initialEnv "" defs, ConstrainRes [] []) defs)
-  where constrainDef :: (ConstrainEnv, ConstrainRes) -> SAST.Definition -> Fallible (ConstrainEnv, ConstrainRes)
-        constrainDef = _
+constrain defs = do
+  -- TODO: Figure out module name here
+  let modu = ""
+  res <- lift (_ <$> runStateT (mapM (constrainDef modu) defs) (initialEnv modu defs))
+  case res of
+    _ -> _
+  where constrainDef :: Text -> SAST.Definition -> Constrain [(QualifiedReference, TAST.Definition, [C.Constraint])]
+        constrainDef modu (SAST.TypeDef name constructors _span) = return [((modu, name), TAST.TypeDef name constructors _, [])]
+        -- We want to preserve type aliases into the database.  How?
+        constrainDef modu (SAST.TypeAliasDef name t span) = do
+          typeRes <- typify t
+          case typeRes of
+            Nothing    -> return []
+            Just tType -> return [((modu, name), TAST.TypeDef name (typeToType tType) (spanToSpanType span tType), [])]
+        constrainDef modu (SAST.ValueDef name expr span) = do
+          (expr, constraints) <- constrain' expr
+          return [((modu, name), TAST.ValueDef name expr (spanToSpanType span (typeOf expr)), constraints)]
