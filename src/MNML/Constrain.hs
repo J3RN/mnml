@@ -30,17 +30,17 @@ type PendingType = (QualifiedReference, T.Type, SAST.SourceSpan)
 data ConstrainEnv
   = ConstrainEnv
       { _bindings     :: Bindings
+      , _definitions  :: [SAST.Definition]
       , _errors       :: [ConstrainError]
       , _module       :: Text
       , _pendingTypes :: [PendingType]
-      , _definitions  :: [SAST.Definition]
       }
 
 bindings :: Lens' ConstrainEnv Bindings
-bindings = lens _bindings (\us bin -> us {_bindings = bin})
+bindings = lens _bindings (\ce bin -> ce {_bindings = bin})
 
 pendingTypes :: Lens' ConstrainEnv [PendingType]
-pendingTypes = lens _pendingTypes (\us pt -> us {_pendingTypes = pt})
+pendingTypes = lens _pendingTypes (\ce pt -> ce {_pendingTypes = pt})
 
 errors :: Lens' ConstrainEnv [ConstrainError]
 errors = lens _errors (\ce errs -> ce { _errors = errs } )
@@ -49,11 +49,17 @@ initialEnv :: Text -> [SAST.Definition] -> ConstrainEnv
 initialEnv modu defs  =
   ConstrainEnv
     { _bindings = Map.empty
+    , _definitions = defs
     , _errors = []
     , _module = modu
     , _pendingTypes = []
-    , _definitions = defs
     }
+
+data ConstrainRes
+  = ConstrainRes
+      { _typedDefs   :: [(QualifiedReference, TAST.Definition)]
+      , _constraints :: [C.Constraint]
+      }
 
 type Constrain a = StateT ConstrainEnv (State CompilerState) a
 
@@ -306,12 +312,6 @@ moduleNamedType qvr = do
             Just t  ->  Right t
             -- TODO: Fix UnknownType argument
             Nothing -> Left (UnknownType (snd qvr)))
-
-data ConstrainRes
-  = ConstrainRes
-      { _typedExprs   :: [(QualifiedReference, TAST.Expr)]
-      , _constraints' :: [C.Constraint]
-      }
 
 constrain :: [SAST.Definition] -> Fallible ConstrainRes
 -- TODO: Figure out module name here
