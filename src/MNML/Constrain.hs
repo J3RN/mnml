@@ -5,7 +5,6 @@ module MNML.Constrain
 
 import           Control.Monad        (foldM, mapAndUnzipM)
 import           Control.Monad.State  (State, StateT, gets, lift, modify)
-import           Control.Monad.Writer (WriterT, tell)
 import           Data.Bifunctor       (bimap, second)
 import           Data.Map             (Map, (!?))
 import qualified Data.Map             as Map
@@ -31,6 +30,7 @@ type PendingType = (QualifiedReference, T.Type, SAST.SourceSpan)
 data ConstrainEnv
   = ConstrainEnv
       { _bindings     :: Bindings
+      , _errors       :: [ConstrainError]
       , _module       :: Text
       , _pendingTypes :: [PendingType]
       , _definitions  :: [SAST.Definition]
@@ -42,16 +42,20 @@ bindings = lens _bindings (\us bin -> us {_bindings = bin})
 pendingTypes :: Lens' ConstrainEnv [PendingType]
 pendingTypes = lens _pendingTypes (\us pt -> us {_pendingTypes = pt})
 
+errors :: Lens' ConstrainEnv [ConstrainError]
+errors = lens _errors (\ce errs -> ce { _errors = errs } )
+
 initialEnv :: Text -> [SAST.Definition] -> ConstrainEnv
 initialEnv modu defs  =
   ConstrainEnv
     { _bindings = Map.empty
+    , _errors = []
     , _module = modu
     , _pendingTypes = []
     , _definitions = defs
     }
 
-type Constrain a = WriterT [ConstrainError] (StateT ConstrainEnv (State CompilerState)) a
+type Constrain a = StateT ConstrainEnv (State CompilerState) a
 
 -- Helpers
 
@@ -79,7 +83,7 @@ litToLit (SAST.LChar char s)    = return (TAST.LChar char (spanToSpanType s T.Ch
 litToLit (SAST.LString text s)  = return (TAST.LString text (spanToSpanType s T.String))
 
 addError :: ConstrainError -> Constrain ()
-addError err = tell [err]
+addError err = modify (over errors (err:))
 
 giveUp :: ConstrainError -> Text -> Constrain T.Type
 giveUp err name = addError err >> freshTypeVar name []
@@ -234,10 +238,10 @@ constrainPattern (SAST.PLiteral lit spanA) = do
   return (TAST.PLiteral lit' (spanToSpanType spanA (typeOf lit')), [])
 
 freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
-freshTypeVar name traits = T.Var name (Set.fromList traits) <$> lift (lift varIdPlusPlus)
+freshTypeVar name traits = T.Var name (Set.fromList traits) <$> lift varIdPlusPlus
 
 freshPartialRecord :: T.FieldSpec -> Constrain T.Type
-freshPartialRecord fields = T.PartialRecord fields <$> lift (lift varIdPlusPlus)
+freshPartialRecord fields = T.PartialRecord fields <$> lift varIdPlusPlus
 
 -- Runs a function within its own scope (inheriting the existing scope)
 withNewScope :: Constrain a -> Constrain a
