@@ -2,6 +2,7 @@ module MNML.Error
     ( ConstrainError (..)
     , Error (..)
     , Fallible
+    , GenerateError (..)
     , ParseError (..)
     , RuntimeError (..)
     , UnificationError (..)
@@ -23,6 +24,7 @@ data Error
   = ParseError ParseError
   | ConstrainError ConstrainError
   | UnificationError UnificationError
+  | GenerateError GenerateError
   | RuntimeError RuntimeError
 
 data ParseError
@@ -44,4 +46,8 @@ data UnificationError
   | ExpectedFields T.Type T.FieldSpec SAST.SourceSpan
   deriving (Eq, Show)
 
+data GenerateError = Placeholder'
+  deriving (Eq, Show)
+
 data RuntimeError = Placeholder
+  deriving (Eq, Show)

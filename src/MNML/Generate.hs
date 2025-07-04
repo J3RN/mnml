@@ -12,12 +12,10 @@ import qualified MNML.AST.Type       as TAST
 import           MNML.Base           (QualifiedReference)
 import           MNML.CompilerState  (CompilerState)
 import qualified MNML.Core           as Core
+import           MNML.Error          (Error (GenerateError), Fallible,
+                                      GenerateError)
 import qualified MNML.Type           as T
 import qualified MNML.Unify          as Unify
-
-newtype GenerateError
-  = UnificationError Unify.UnificationError
-  deriving (Eq, Show)
 
 newtype GenerateState
   = GenerateState { _modu :: Core.Module }
@@ -31,9 +29,7 @@ initialState :: GenerateState
 initialState =
   GenerateState {_modu = Core.Module {_memories = [], _functions = []}}
 
-generate ::
-  QualifiedReference ->
-  State CompilerState (Either [GenerateError] Text)
+generate :: QualifiedReference -> Fallible Text
 generate qvr = do
   typeRes <- Unify.valueType qvr
   return $ case typeRes of
