@@ -19,16 +19,17 @@ import           MNML.Base           (QualifiedReference)
 import           MNML.CompilerState  (CompilerState (..), varIdPlusPlus)
 import qualified MNML.Constrain      as C
 import           MNML.Constraint     (Constraint (..))
-import           MNML.Error          (Error (UnificationError))
+import           MNML.Error          (Error (UnificationError),
+                                      UnificationError)
 import qualified MNML.Type           as T
 
 type Subst = Map T.Type T.Type
 
-type Constrain = StateT Subst (State CompilerState)
+type Unify = StateT Subst (State CompilerState)
 
 -- Unify a set of constraints
 
-unify :: [Constraint] -> Constrain (Maybe UnificationError)
+unify :: [Constraint] -> Unify (Maybe UnificationError)
 unify [] = return Nothing
 -- Delete
 unify ((CEqual _ t1 t2) : cs) | t1 == t2 = unify cs
@@ -104,7 +105,7 @@ bind ::
   T.Type ->
   T.Type ->
   [Constraint] ->
-  Constrain (Either UnificationError [Constraint])
+  Unify (Either UnificationError [Constraint])
 bind sSpan var t cs =
   if var `occursIn` t
     then return (Left (OccursError var t sSpan))
@@ -123,7 +124,7 @@ bind sSpan var t cs =
     eliminate src target (T.Record fieldSpec) = T.Record (Map.map (eliminate src target) fieldSpec)
     eliminate _ _ substType = substType
 
-bind' :: SAST.SourceSpan -> T.Type -> T.Type -> [Constraint] -> Constrain (Maybe UnificationError)
+bind' :: SAST.SourceSpan -> T.Type -> T.Type -> [Constraint] -> Unify (Maybe UnificationError)
 bind' sSpan var t cs = bind sSpan var t cs >>= either (return . Just) unify
 
 occursIn :: T.Type -> T.Type -> Bool
@@ -225,7 +226,7 @@ valueType qvr = do
     maybeSubType subst sst = sst {TAST._type = foldl (flip applySubst) (TAST._type sst) (Map.toList subst)}
     dupTypeVars :: T.Type -> State CompilerState T.Type
     dupTypeVars t = evalStateT (dupTypeVars' t) Map.empty
-    dupTypeVars' :: T.Type -> Constrain T.Type
+    dupTypeVars' :: T.Type -> Unify T.Type
     dupTypeVars' T.Int = return T.Int
     dupTypeVars' T.Float = return T.Float
     dupTypeVars' T.Char = return T.Char
