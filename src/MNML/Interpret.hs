@@ -1,12 +1,10 @@
 module MNML.Interpret
     ( interpret
     ) where
-import           Control.Monad.Except (ExceptT)
-import           Control.Monad.State  (State)
-import           MNML.AST.Type        as TAST
-import           MNML.CompilerState   (CompilerState)
-import           MNML.Error           (Error (RuntimeError))
+import           MNML.AST.Type as TAST
+import           MNML.Base     (QualifiedReference)
+import           MNML.Error    (Error (RuntimeError), Fallible)
 
 
-interpret :: ExceptT Error (State CompilerState) TAST.Expr
+interpret :: QualifiedReference -> Fallible TAST.Expr
 interpret = _
