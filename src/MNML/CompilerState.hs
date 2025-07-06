@@ -21,9 +21,9 @@ type Identifier = String
 
 data CompilerState
   = CompilerState
-      { _valueNames       :: Map QualifiedReference Identifier
+      { _valueNames       :: Map QualifiedReference [Identifier]
       , _valueDefinitions :: Map Identifier TAST.Expr
-      , _typeNames        :: Map QualifiedReference Identifier
+      , _typeNames        :: Map QualifiedReference [Identifier]
       , _typeDefinitions  :: Map Identifier T.Type
       , _nextTypeId       :: T.VarId
       }
@@ -49,14 +49,18 @@ nextTypeId = lens _nextTypeId (\cs vi -> cs {_nextTypeId = vi})
 -- Lookup a type by name
 lookupType :: CompilerState -> QualifiedReference -> Maybe T.Type
 lookupType cs qvr = do
-  tId <- _typeNames cs !? qvr
-  _typeDefinitions cs !? tId
+  tIds <- _typeNames cs !? qvr
+  case tIds of
+    []      -> Nothing
+    (tId:_) -> _typeDefinitions cs !? tId
 
 -- Lookup a value by name
 lookupVal :: CompilerState -> QualifiedReference -> Maybe TAST.Expr
 lookupVal cs qvr = do
-  vId <- _valueNames cs !? qvr
-  _valueDefinitions cs !? vId
+  vIds <- _valueNames cs !? qvr
+  case vIds of
+    []      -> Nothing
+    (vId:_) -> _valueDefinitions cs !? vId
 
 -- Not a great name, but
 varIdPlusPlus :: State CompilerState T.VarId
