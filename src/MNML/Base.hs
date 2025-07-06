@@ -10,4 +10,4 @@ type ModName = Text
 
 type ValName = Text
 
-type QualifiedReference = (Text, Text)
+type QualifiedReference = (ModName, ValName)
