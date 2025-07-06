@@ -17,7 +17,7 @@ import qualified MNML.Unify           as Unify
 
 load :: Text -> ExceptT Error (State CompilerState) ()
 load code = do
-  sast <- Parse.parse code
+  defs <- Parse.parse code
   constraintRes <- Constrain.constain defs
   unifyRes <- Unify.unify constraint
   Store.store unifyRes

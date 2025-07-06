@@ -17,7 +17,7 @@ import           MNML.AST.Span       (spanOf)
 import qualified MNML.AST.Span       as SAST
 import           MNML.AST.Type       (typeOf)
 import qualified MNML.AST.Type       as TAST
-import           MNML.Base           (QualifiedReference)
+import           MNML.Base           (ModName, QualifiedReference)
 import           MNML.CompilerState  (CompilerState (..), lookupType, lookupVal,
                                       varIdPlusPlus)
 import qualified MNML.Constraint     as C
@@ -58,8 +58,10 @@ initialEnv modu defs  =
 
 data ConstrainRes
   = ConstrainRes
-      { _typedDefs   :: [(QualifiedReference, TAST.Definition)]
-      , _constraints :: [C.Constraint]
+      { _typeDefs      :: Map Text [(Text, [SAST.Type], SAST.SourceSpan)]
+      , _typeAliasDefs :: Map Text (SAST.Type, SAST.SourceSpan)
+      , _typedExprs    :: [(QualifiedReference, TAST.Expr)]
+      , _constraints   :: [C.Constraint]
       }
 
 type Constrain a = StateT ConstrainEnv (State CompilerState) a
@@ -215,7 +217,7 @@ constrainPattern (SAST.PConstructor name argPatterns spanA) = do
   funTypeRes <- constructorType qvr
   (retType, cons) <-
     case funTypeRes of
-      Nothing -> (,[]) <$> addError (UnknownConstructor qvr spanA)
+      Nothing -> (,[]) <$> giveUp (UnknownConstructor qvr spanA) name
       Just funType@(T.Fun _ _) -> do
         retType <- freshTypeVar name []
         return (retType, [C.CEqual spanA (T.Fun (map typeOf argPatterns') retType) funType])
@@ -273,23 +275,6 @@ constructorType qvr = do
   -- Step 2: See if it's in the store
   (typeOf <$>) <$> lift (gets (`lookupVal` qvr))
 
-conTypeFromConstructors ::
-  Text -> Text -> [(Text, [SAST.Type])] -> Constrain (Either ConstrainError T.Type)
-conTypeFromConstructors conName tName constructors = do
-  foldl (<>) (Left (UnknownConstructor conName))
-    <$> mapM
-      ( \case
-          (cName, argTypes) | cName == conName -> typifyConstructor argTypes tName
-          _ -> return (Left (UnknownConstructor conName))
-      )
-      constructors
-
-typifyConstructor :: [SAST.Type] -> Text -> Constrain (Either ConstrainError T.Type)
-typifyConstructor [] tName = return (Right (T.AlgebraicType tName))
-typifyConstructor argTypes tName = do
-  typifiedTypes <- mapM typify argTypes
-  return (T.Fun <$> sequence typifiedTypes <*> return (T.AlgebraicType tName))
-
 typify :: SAST.Type -> Constrain (Maybe T.Type)
 typify (SAST.TInt _) = return (Just T.Int)
 typify (SAST.TFloat _) = return (Just T.Float)
@@ -316,21 +301,49 @@ moduleNamedType qvr = do
   -- Step 2: See if it's in the store
   lift (gets (`lookupType` qvr))
 
+convertConstructor :: (Text, [SAST.Type]) -> Constrain (Text, [TAST.Type])
+convertConstructor (cName, cArgs) = do
+  newArgs <- foldM _ [] cArgs
+  return (cName, newArgs)
+
+typeToType :: SAST.Type -> Constrain (Maybe TAST.Type)
+typeToType sast@(SAST.TInt spanA) = (TAST.TInt . spanToSpanType spanA <$>) <$> typify sast
+typeToType sast@(SAST.TFloat spanA)  = (TAST.TFloat . spanToSpanType spanA <$>) <$> typify sast
+typeToType sast@(SAST.TChar spanA)   = (TAST.TChar . spanToSpanType spanA <$>) <$> typify sast
+typeToType sast@(SAST.TString spanA) = (TAST.TString . spanToSpanType spanA <$>) <$> typify sast
+-- ???
+typeToType sast@(SAST.TNamedType name spanA)  = do
+  maybeT <- typify sast
+  case maybeT of
+    Just t  -> _
+    Nothing -> return (Just (giveUp (UnknownType name spanA) name))
+typeToType sast@(SAST.TList listType spanA)  = TAST.TList _ (spanToSpanType spanA)
+typeToType sast@(SAST.TFun argTypes reType spanA)  = TAST.TFun _ _ (spanToSpanType spanA)
+typeToType sast@(SAST.TRecord fieldSpec spanA) = TAST.TRecord _ (spanToSpanType spanA)
+typeToType sast@(SAST.TVar name spanA) = (TAST.TVar name . spanToSpanType spanA <$>) <$> typify sast
+
+emptyResult :: ConstrainRes
+emptyResult = ConstrainRes {_typedDefs = [], _constraints = []}
+
 constrain :: [SAST.Definition] -> Fallible ConstrainRes
 constrain defs = do
   -- TODO: Figure out module name here
   let modu = ""
-  res <- lift (_ <$> runStateT (mapM (constrainDef modu) defs) (initialEnv modu defs))
+  res <- lift (runStateT (mapM (constrainDef modu) defs) (initialEnv modu defs))
   case res of
-    _ -> _
-  where constrainDef :: Text -> SAST.Definition -> Constrain [(QualifiedReference, TAST.Definition, [C.Constraint])]
-        constrainDef modu (SAST.TypeDef name constructors _span) = return [((modu, name), TAST.TypeDef name constructors _, [])]
-        -- We want to preserve type aliases into the database.  How?
-        constrainDef modu (SAST.TypeAliasDef name t span) = do
-          typeRes <- typify t
+    ( results, ConstrainEnv {_errors = []})   -> return (foldl addResult emptyResult results)
+    (_results, ConstrainEnv {_errors = errs}) -> _
+  where constrainDef :: ModName -> SAST.Definition -> Constrain (QualifiedReference, TAST.Definition, [C.Constraint])
+        constrainDef modu (SAST.TypeDef name constructors spanA) = do
+          newType <- freshTypeVar name []
+          return ((modu, name), TAST.TypeDef name (map convertConstructor constructors) (spanToSpanType spanA newType), [])
+        constrainDef modu (SAST.TypeAliasDef name t spanA) = do
+          typeRes <- typeToType t
           case typeRes of
-            Nothing    -> return []
-            Just tType -> return [((modu, name), TAST.TypeDef name (typeToType tType) (spanToSpanType span tType), [])]
-        constrainDef modu (SAST.ValueDef name expr span) = do
+            Nothing    -> _ -- TODO: Error
+            Just tType -> return ((modu, name), TAST.TypeAliasDef name tType (spanToSpanType spanA (typeOf tType)), [])
+        constrainDef modu (SAST.ValueDef name expr spanA) = do
           (expr, constraints) <- constrain' expr
-          return [((modu, name), TAST.ValueDef name expr (spanToSpanType span (typeOf expr)), constraints)]
+          return ((modu, name), TAST.ValueDef name expr (spanToSpanType spanA (typeOf expr)), constraints)
+        addResult :: ConstrainRes -> (QualifiedReference, TAST.Definition, [C.Constraint]) -> ConstrainRes
+        addResult res (qvr, def, cs) = res {_typedDefs = (qvr, def) : _typedDefs res, _constraints = cs ++ _constraints res}
