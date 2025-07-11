@@ -1,5 +1,6 @@
 module MNML.AST.Span
-    ( Definition (..)
+    ( Constructor
+    , Definition (..)
     , Expr (..)
     , Literal (..)
     , Operator (..)
@@ -19,9 +20,11 @@ data SourceSpan
       }
   deriving (Eq, Show)
 
+type Constructor = (Text, [Type])
+
 data Definition
   -- "MyType = Foo(String) | Bar(Int, String)"
-  = TypeDef Text [(Text, [Type])] SourceSpan
+  = TypeDef Text [Constructor] SourceSpan
   -- "alias {name: String} as User" or "alias Int as Price"
   | TypeAliasDef Text Type SourceSpan
   -- foo = 1 + 3
