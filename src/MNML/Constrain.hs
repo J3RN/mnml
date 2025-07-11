@@ -3,38 +3,48 @@ module MNML.Constrain
     , constrain
     ) where
 
-import           Control.Monad       (foldM, mapAndUnzipM)
-import           Control.Monad.State (State, StateT, gets, lift, modify,
-                                      runStateT)
-import           Data.Bifunctor      (bimap, second)
-import           Data.Map            (Map, (!?))
-import qualified Data.Map            as Map
-import qualified Data.Set            as Set
-import           Data.Text           (Text)
-import           Lens.Micro          (Lens', lens, over, set)
-import           Lens.Micro.Extras   (view)
-import           MNML.AST.Span       (spanOf)
-import qualified MNML.AST.Span       as SAST
-import           MNML.AST.Type       (typeOf)
-import qualified MNML.AST.Type       as TAST
-import           MNML.Base           (ModName, QualifiedReference)
-import           MNML.CompilerState  (CompilerState (..), lookupType, lookupVal,
-                                      varIdPlusPlus)
-import qualified MNML.Constraint     as C
-import           MNML.Error          (ConstrainError (..), Fallible)
-import qualified MNML.Type           as T
+import           Control.Monad        (foldM, mapAndUnzipM)
+import           Control.Monad.Except (MonadError (throwError))
+import           Control.Monad.State  (State, StateT, execStateT, gets, lift,
+                                       modify)
+import           Data.Bifunctor       (bimap, second)
+import           Data.Map             (Map, (!?))
+import qualified Data.Map             as Map
+import qualified Data.Set             as Set
+import           Data.Text            (Text)
+import           Lens.Micro           (Lens', lens, over, set)
+import           Lens.Micro.Extras    (view)
+import           MNML.AST.Span        (spanOf)
+import qualified MNML.AST.Span        as SAST
+import           MNML.AST.Type        (typeOf)
+import qualified MNML.AST.Type        as TAST
+import           MNML.Base            (ModName, QualifiedReference, ValName)
+import           MNML.CompilerState   (CompilerState (..), lookupType,
+                                       lookupVal, varIdPlusPlus)
+import qualified MNML.Constraint      as C
+import           MNML.Error           (ConstrainError (..),
+                                       Error (ConstrainError), Fallible)
+import qualified MNML.Type            as T
 
-type Bindings = Map Text T.Type
+-- Local vars, e.g. "x is Int"
+type Bindings = Map ValName T.Type
 
+-- "We don't know what type 'doThing' is, let's find out later"
 type PendingType = (QualifiedReference, T.Type, SAST.SourceSpan)
+
+-- e.g. Just Int
+type Constructor = (Text, [T.Type])
 
 data ConstrainEnv
   = ConstrainEnv
-      { _bindings     :: Bindings
-      , _definitions  :: [SAST.Definition]
-      , _errors       :: [ConstrainError]
-      , _module       :: Text
-      , _pendingTypes :: [PendingType]
+      { _typeDefs'      :: Map QualifiedReference ([Constructor], SAST.SourceSpan)
+      , _typeAliasDefs' :: Map QualifiedReference (T.Type, SAST.SourceSpan)
+      , _typedExprs'    :: Map QualifiedReference TAST.Expr
+      , _bindings       :: Bindings
+      , _definitions    :: [SAST.Definition]
+      , _errors         :: [ConstrainError]
+      , _module         :: ModName
+      , _pendingTypes   :: [PendingType]
       }
 
 bindings :: Lens' ConstrainEnv Bindings
@@ -46,7 +56,7 @@ pendingTypes = lens _pendingTypes (\ce pt -> ce {_pendingTypes = pt})
 errors :: Lens' ConstrainEnv [ConstrainError]
 errors = lens _errors (\ce errs -> ce { _errors = errs } )
 
-initialEnv :: Text -> [SAST.Definition] -> ConstrainEnv
+initialEnv :: ModName -> [SAST.Definition] -> ConstrainEnv
 initialEnv modu defs  =
   ConstrainEnv
     { _bindings = Map.empty
@@ -54,13 +64,16 @@ initialEnv modu defs  =
     , _errors = []
     , _module = modu
     , _pendingTypes = []
+    , _typeDefs' = Map.empty
+    , _typeAliasDefs' = Map.empty
+    , _typedExprs' = Map.empty
     }
 
 data ConstrainRes
   = ConstrainRes
-      { _typeDefs      :: Map Text [(Text, [SAST.Type], SAST.SourceSpan)]
-      , _typeAliasDefs :: Map Text (SAST.Type, SAST.SourceSpan)
-      , _typedExprs    :: [(QualifiedReference, TAST.Expr)]
+      { _typeDefs      :: Map QualifiedReference ([Constructor], SAST.SourceSpan)
+      , _typeAliasDefs :: Map QualifiedReference (T.Type, SAST.SourceSpan)
+      , _typedExprs    :: Map QualifiedReference TAST.Expr
       , _constraints   :: [C.Constraint]
       }
 
@@ -248,7 +261,7 @@ constrainPattern (SAST.PLiteral lit spanA) = do
   lit' <- litToLit lit
   return (TAST.PLiteral lit' (spanToSpanType spanA (typeOf lit')), [])
 
-freshTypeVar :: Text -> [T.Trait] -> Constrain T.Type
+freshTypeVar :: ValName -> [T.Trait] -> Constrain T.Type
 freshTypeVar name traits = T.Var name (Set.fromList traits) <$> lift varIdPlusPlus
 
 freshPartialRecord :: T.FieldSpec -> Constrain T.Type
@@ -262,7 +275,7 @@ withNewScope f = do
   modify (set bindings oldBindings)
   return result
 
-declareVar :: Text -> Constrain T.Type
+declareVar :: ValName -> Constrain T.Type
 declareVar name = do
   newVarType <- freshTypeVar name []
   modify (over bindings (Map.insert name newVarType))
@@ -322,28 +335,38 @@ typeToType sast@(SAST.TFun argTypes reType spanA)  = TAST.TFun _ _ (spanToSpanTy
 typeToType sast@(SAST.TRecord fieldSpec spanA) = TAST.TRecord _ (spanToSpanType spanA)
 typeToType sast@(SAST.TVar name spanA) = (TAST.TVar name . spanToSpanType spanA <$>) <$> typify sast
 
-emptyResult :: ConstrainRes
-emptyResult = ConstrainRes {_typedDefs = [], _constraints = []}
-
 constrain :: [SAST.Definition] -> Fallible ConstrainRes
 constrain defs = do
   -- TODO: Figure out module name here
   let modu = ""
-  res <- lift (runStateT (mapM (constrainDef modu) defs) (initialEnv modu defs))
+  res <- lift (execStateT (extractTypeDefs >> extractTypeAliases >> extractValueDefs) (initialEnv modu defs))
   case res of
-    ( results, ConstrainEnv {_errors = []})   -> return (foldl addResult emptyResult results)
-    (_results, ConstrainEnv {_errors = errs}) -> _
-  where constrainDef :: ModName -> SAST.Definition -> Constrain (QualifiedReference, TAST.Definition, [C.Constraint])
-        constrainDef modu (SAST.TypeDef name constructors spanA) = do
-          newType <- freshTypeVar name []
-          return ((modu, name), TAST.TypeDef name (map convertConstructor constructors) (spanToSpanType spanA newType), [])
-        constrainDef modu (SAST.TypeAliasDef name t spanA) = do
-          typeRes <- typeToType t
-          case typeRes of
-            Nothing    -> _ -- TODO: Error
-            Just tType -> return ((modu, name), TAST.TypeAliasDef name tType (spanToSpanType spanA (typeOf tType)), [])
-        constrainDef modu (SAST.ValueDef name expr spanA) = do
-          (expr, constraints) <- constrain' expr
-          return ((modu, name), TAST.ValueDef name expr (spanToSpanType spanA (typeOf expr)), constraints)
-        addResult :: ConstrainRes -> (QualifiedReference, TAST.Definition, [C.Constraint]) -> ConstrainRes
-        addResult res (qvr, def, cs) = res {_typedDefs = (qvr, def) : _typedDefs res, _constraints = cs ++ _constraints res}
+    env@(ConstrainEnv {_errors = []}) ->
+      return (ConstrainRes { _typeDefs = _typeDefs' env, _typeAliasDefs = _typeAliasDefs' env, _typedExprs = _typedExprs' env, _constraints = _})
+
+    (ConstrainEnv {_errors = errs}) ->
+      throwError (map ConstrainError errs)
+
+extractTypeDefs :: Constrain ()
+extractTypeDefs = gets _definitions >>= mapM_ extractTypeDef
+  where extractTypeDef :: SAST.Definition -> Constrain ()
+        extractTypeDef (SAST.TypeDef name constructors span) = modify (addTypeDef name constructors span)
+        extractTypeDef _                                     = return ()
+        addTypeDef :: Text -> [SAST.Constructor] -> SAST.SourceSpan -> ConstrainEnv -> ConstrainEnv
+        addTypeDef name constructors span env = env { _typeDefs' = Map.insert (_, name) (_, span) (_typeDefs' env) }
+
+extractTypeAliases :: Constrain ()
+extractTypeAliases = gets _definitions >>= mapM_ extractTypeAliasDef
+  where extractTypeAliasDef :: SAST.Definition -> Constrain ()
+        extractTypeAliasDef (SAST.TypeAliasDef name t span) = modify (addTypeAliasDef name t span)
+        extractTypeAliasDef _                               = return ()
+        addTypeAliasDef :: Text -> SAST.Type -> SAST.SourceSpan -> ConstrainEnv -> ConstrainEnv
+        addTypeAliasDef name t span env = env { _typeAliasDefs' = Map.insert (_, name) (_, span) (_typeAliasDefs' env) }
+
+extractValueDefs :: Constrain ()
+extractValueDefs = gets _definitions >>= mapM_ extractValueDef
+  where extractValueDef :: SAST.Definition -> Constrain ()
+        extractValueDef (SAST.ValueDef name expr span) = modify (addValueDef name expr span)
+        extractValueDef _                              = return ()
+        addValueDef :: ValName -> SAST.Expr -> SAST.SourceSpan -> ConstrainEnv -> ConstrainEnv
+        addValueDef name expr span env = env { _typedExprs' = Map.insert (_, name) (_ expr) (_typedExprs' env) }
