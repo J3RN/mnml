@@ -37,44 +37,58 @@ type Constructor = (Text, [T.Type])
 
 data ConstrainEnv
   = ConstrainEnv
-      { _typeDefs'      :: Map QualifiedReference ([Constructor], SAST.SourceSpan)
+      { _bindings :: Bindings
+      , _constraints' :: [C.Constraint]
+      , _definitions :: [SAST.Definition]
+      , _errors :: [ConstrainError]
+      , _module :: ModName
+      , _pendingTypes :: [PendingType]
+      , _typeDefs' :: Map QualifiedReference ([Constructor], SAST.SourceSpan)
       , _typeAliasDefs' :: Map QualifiedReference (T.Type, SAST.SourceSpan)
-      , _typedExprs'    :: Map QualifiedReference TAST.Expr
-      , _bindings       :: Bindings
-      , _definitions    :: [SAST.Definition]
-      , _errors         :: [ConstrainError]
-      , _module         :: ModName
-      , _pendingTypes   :: [PendingType]
+      , _typedExprs' :: Map QualifiedReference TAST.Expr
       }
 
 bindings :: Lens' ConstrainEnv Bindings
 bindings = lens _bindings (\ce bin -> ce {_bindings = bin})
 
-pendingTypes :: Lens' ConstrainEnv [PendingType]
-pendingTypes = lens _pendingTypes (\ce pt -> ce {_pendingTypes = pt})
+constraints :: Lens' ConstrainEnv [C.Constraint]
+constraints = lens _constraints' (\ce cs -> ce {_constraints' = cs})
 
 errors :: Lens' ConstrainEnv [ConstrainError]
 errors = lens _errors (\ce errs -> ce { _errors = errs } )
+
+pendingTypes :: Lens' ConstrainEnv [PendingType]
+pendingTypes = lens _pendingTypes (\ce pt -> ce {_pendingTypes = pt})
+
+typeDefs :: Lens' ConstrainEnv (Map QualifiedReference ([Constructor], SAST.SourceSpan))
+typeDefs = lens _typeDefs' (\ce td -> ce {_typeDefs' = td})
+
+typeAliasDefs :: Lens' ConstrainEnv (Map QualifiedReference (T.Type, SAST.SourceSpan))
+typeAliasDefs = lens _typeAliasDefs' (\ce ta -> ce {_typeAliasDefs' = ta})
+
+typedExprs :: Lens' ConstrainEnv (Map QualifiedReference TAST.Expr)
+typedExprs = lens _typedExprs' (\ce te -> ce {_typedExprs' = te})
 
 initialEnv :: ModName -> [SAST.Definition] -> ConstrainEnv
 initialEnv modu defs  =
   ConstrainEnv
     { _bindings = Map.empty
+    , _constraints' = []
     , _definitions = defs
     , _errors = []
     , _module = modu
     , _pendingTypes = []
-    , _typeDefs' = Map.empty
     , _typeAliasDefs' = Map.empty
+    , _typeDefs' = Map.empty
     , _typedExprs' = Map.empty
     }
 
 data ConstrainRes
   = ConstrainRes
-      { _typeDefs      :: Map QualifiedReference ([Constructor], SAST.SourceSpan)
+      { _typeDefs :: Map QualifiedReference ([Constructor], SAST.SourceSpan)
       , _typeAliasDefs :: Map QualifiedReference (T.Type, SAST.SourceSpan)
-      , _typedExprs    :: Map QualifiedReference TAST.Expr
-      , _constraints   :: [C.Constraint]
+      , _typedExprs :: Map QualifiedReference TAST.Expr
+      , _constraints :: [C.Constraint]
       }
 
 type Constrain a = StateT ConstrainEnv (State CompilerState) a
@@ -342,31 +356,39 @@ constrain defs = do
   res <- lift (execStateT (extractTypeDefs >> extractTypeAliases >> extractValueDefs) (initialEnv modu defs))
   case res of
     env@(ConstrainEnv {_errors = []}) ->
-      return (ConstrainRes { _typeDefs = _typeDefs' env, _typeAliasDefs = _typeAliasDefs' env, _typedExprs = _typedExprs' env, _constraints = _})
+      return (ConstrainRes { _typeDefs = _typeDefs' env, _typeAliasDefs = _typeAliasDefs' env, _typedExprs = _typedExprs' env, _constraints = _constraints' env})
 
     (ConstrainEnv {_errors = errs}) ->
       throwError (map ConstrainError errs)
 
 extractTypeDefs :: Constrain ()
-extractTypeDefs = gets _definitions >>= mapM_ extractTypeDef
-  where extractTypeDef :: SAST.Definition -> Constrain ()
-        extractTypeDef (SAST.TypeDef name constructors span) = modify (addTypeDef name constructors span)
-        extractTypeDef _                                     = return ()
-        addTypeDef :: Text -> [SAST.Constructor] -> SAST.SourceSpan -> ConstrainEnv -> ConstrainEnv
-        addTypeDef name constructors span env = env { _typeDefs' = Map.insert (_, name) (_, span) (_typeDefs' env) }
+extractTypeDefs = extractDefinitions typeDef
+  where
+    typeDef (SAST.TypeDef name constructors span) = do
+      modu <- gets _module
+      modify (over typeDefs (Map.insert (modu, name) (_, span)))
+    typeDef _ = return ()
 
 extractTypeAliases :: Constrain ()
-extractTypeAliases = gets _definitions >>= mapM_ extractTypeAliasDef
-  where extractTypeAliasDef :: SAST.Definition -> Constrain ()
-        extractTypeAliasDef (SAST.TypeAliasDef name t span) = modify (addTypeAliasDef name t span)
-        extractTypeAliasDef _                               = return ()
-        addTypeAliasDef :: Text -> SAST.Type -> SAST.SourceSpan -> ConstrainEnv -> ConstrainEnv
-        addTypeAliasDef name t span env = env { _typeAliasDefs' = Map.insert (_, name) (_, span) (_typeAliasDefs' env) }
+extractTypeAliases = extractDefinitions typeAliasDef
+  where
+    typeAliasDef (SAST.TypeAliasDef name sastT span) = do
+      modu <- gets _module
+      maybeType <- typify sastT
+      case maybeType of
+        Just t -> modify (over typeAliasDefs (Map.insert (modu, name) (t, span)))
+        Nothing -> addError (UnknownType name span)
+    typeAliasDef _ = return ()
 
 extractValueDefs :: Constrain ()
-extractValueDefs = gets _definitions >>= mapM_ extractValueDef
-  where extractValueDef :: SAST.Definition -> Constrain ()
-        extractValueDef (SAST.ValueDef name expr span) = modify (addValueDef name expr span)
-        extractValueDef _                              = return ()
-        addValueDef :: ValName -> SAST.Expr -> SAST.SourceSpan -> ConstrainEnv -> ConstrainEnv
-        addValueDef name expr span env = env { _typedExprs' = Map.insert (_, name) (_ expr) (_typedExprs' env) }
+extractValueDefs = extractDefinitions valueDef
+  where
+    valueDef (SAST.ValueDef name expr span) = do
+      modu <- gets _module
+      (typedExpr, cs) <- constrain' expr
+      modify (\env -> env { _typedExprs' = Map.insert (modu, name) typedExpr (_typedExprs' env)
+                          , _constraints' = _constraints' env ++ cs })
+    valueDef _ = return ()
+
+extractDefinitions :: (SAST.Definition -> Constrain ()) -> Constrain ()
+extractDefinitions handler = gets _definitions >>= mapM_ handler
