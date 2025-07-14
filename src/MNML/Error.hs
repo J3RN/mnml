@@ -5,6 +5,7 @@ module MNML.Error
     , GenerateError (..)
     , ParseError (..)
     , RuntimeError (..)
+    , StoreError (..)
     , UnificationError (..)
     ) where
 
@@ -28,6 +29,8 @@ data Error
   | UnificationError UnificationError
   | GenerateError GenerateError
   | RuntimeError RuntimeError
+  | StoreError StoreError
+  deriving (Eq, Show)
 
 data ParseError
   = ParsecError Parsec.ParseError
@@ -52,4 +55,7 @@ data GenerateError = Placeholder'
   deriving (Eq, Show)
 
 data RuntimeError = Placeholder
+  deriving (Eq, Show)
+
+data StoreError = Placeholder''
   deriving (Eq, Show)

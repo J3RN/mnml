@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.38.0.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -34,7 +34,6 @@ library
       MNML.Constraint
       MNML.Core
       MNML.Error
-      MNML.Generate
       MNML.Interpret
       MNML.Load
       MNML.Parse
@@ -96,6 +95,7 @@ test-suite mnml-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      MNML.ConstrainSpec
       MNML.ParseSpec
       MNML.UnifySpec
       SpecHelpers

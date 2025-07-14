@@ -59,7 +59,7 @@ def = typeDef <|> typeAliasDef <|> valueDef
 
 typeDef :: Parser Definition
 typeDef = captureSpan $ do
-  name <- qualifiedTypeName
+  name <- typeName
   _ <- equal
   constructors <- sepBy1 constructor bar
   return (TypeDef name constructors)
@@ -76,12 +76,12 @@ typeAliasDef = captureSpan $ do
   _ <- reserved "alias"
   expansionType <- pType
   _ <- reserved "as"
-  name <- qualifiedTypeName
+  name <- typeName
   return (TypeAliasDef name expansionType)
 
 valueDef :: Parser Definition
 valueDef = captureSpan $ do
-  name <- qualifiedValueName
+  name <- valueName
   _ <- equal
   expr <- expression
   return (ValueDef name expr)
@@ -282,11 +282,20 @@ fieldPattern = do
 
 -- Helpers
 
+valueName :: Parser QualifiedValueReference
+valueName = try qualifiedValueName <|> (([], ) <$> identifier)
+
 qualifiedValueName :: Parser QualifiedValueReference
-qualifiedValueName = liftA2 (,) moduleName identifier
+qualifiedValueName = (,) <$> modulePrefix <*> identifier
+
+typeName :: Parser QualifiedTypeReference
+typeName = try qualifiedTypeName <|> (([], ) <$> typeIdentifier)
 
 qualifiedTypeName :: Parser QualifiedTypeReference
-qualifiedTypeName = liftA2 (,) moduleName typeIdentifier
+qualifiedTypeName = (,) <$> modulePrefix <*> typeIdentifier
+
+modulePrefix :: Parser ModName
+modulePrefix = moduleName <* doubleColon
 
 moduleName :: Parser ModName
 moduleName = sepBy identifier (char '/')
@@ -305,7 +314,7 @@ mnmlDef =
     , Tok.nestedComments = True
     , Tok.identStart = lower
     , Tok.identLetter = alphaNum <|> char '_'
-    , Tok.reservedOpNames = ["+", "-", "*", "/", "|>", "=", "==", "|"]
+    , Tok.reservedOpNames = ["+", "-", "*", "/", "|>", "=", "==", "|", "::"]
     , Tok.reservedNames =
         [ "alias"
         , "as"
@@ -390,6 +399,9 @@ slash = reservedOp "/"
 
 bar :: Parser ()
 bar = reservedOp "|"
+
+doubleColon :: Parser ()
+doubleColon = reservedOp "::"
 
 reservedOp :: String -> Parser ()
 reservedOp = Tok.reservedOp lexer

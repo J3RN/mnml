@@ -29,7 +29,7 @@ data Batch
   = Batch
       { _typeDefs      :: Map QualifiedTypeReference TypeDef
       , _typeAliasDefs :: Map QualifiedTypeReference TypeAliasDef
-      , _valueDefs     :: Map QualifiedValueReference Expr
+      , _valueDefs     :: Map QualifiedValueReference ValueDef
       }
 
 typeDefs :: Lens' Batch (Map QualifiedTypeReference TypeDef)
@@ -38,23 +38,27 @@ typeDefs = lens _typeDefs (\ce td -> ce {_typeDefs = td})
 typeAliasDefs :: Lens' Batch (Map QualifiedTypeReference TypeAliasDef)
 typeAliasDefs = lens _typeAliasDefs (\ce ta -> ce {_typeAliasDefs = ta})
 
-valueDefs :: Lens' Batch (Map QualifiedValueReference Expr)
+valueDefs :: Lens' Batch (Map QualifiedValueReference ValueDef)
 valueDefs = lens _valueDefs (\ce te -> ce {_valueDefs = te})
 
 data TypeDef
   = TypeDef [Constructor] SourceSpan
+  deriving (Eq, Show)
 
 data TypeAliasDef
   = TypeAliasDef T.Type SourceSpan
+  deriving (Eq, Show)
 
 -- The span refers to the entire span of the definition whereas the Expr's span
 -- refers only to the RHS
 data ValueDef
   = ValueDef Expr SourceSpan
+  deriving (Eq, Show)
 
 -- e.g. Just Int; Name, TypeArgs, Span
 data Constructor
   = Constructor Text [(T.Type, SourceSpan)] SourceSpan
+  deriving (Eq, Show)
 
 data SourceSpanType
   = SourceSpanType

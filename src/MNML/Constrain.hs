@@ -9,7 +9,6 @@ import           Control.Monad.State  (State, StateT, execStateT, gets, lift,
 import           Data.Bifunctor       (bimap, second)
 import           Data.Map             (Map, (!?))
 import qualified Data.Map             as Map
-import           Data.Maybe           (fromMaybe)
 import qualified Data.Set             as Set
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
@@ -117,7 +116,7 @@ constrain' (SAST.EVar name spanA) = do
     -- Otherwise, this must be a reference.  Give it a type var and add it to the queue for later.
     Nothing -> do
       newTVar <- freshTypeVar name []
-      -- Assume local (same module)
+      -- TODO: Assumes local (same module); need to update to support foreign references
       modu <- gets _module
       modify (over pendingTypes (((modu, name), newTVar, spanA) :))
       return (TAST.EVar name (spanToSpanType spanA newTVar), [])
@@ -320,8 +319,11 @@ convertConstructor (SAST.Constructor cName cArgs spanA) = do
   where convertType :: SAST.Type -> Constrain (T.Type, SAST.SourceSpan)
         convertType sast = do
           maybeT <- typify sast
-          modName <- gets _module
-          t <- fromMaybe <$> giveUp (UnknownType (modName, nameOf sast) (spanOf sast)) (Text.pack (show sast)) <*> pure maybeT
+          t <- case maybeT of
+            Just t -> pure t
+            Nothing -> do
+              modName <- gets _module
+              giveUp (UnknownType (modName, nameOf sast) (spanOf sast)) (Text.pack (show sast))
           return (t, spanOf sast)
         nameOf :: SAST.Type -> Text
         nameOf (SAST.TNamedType name _) = name
@@ -361,7 +363,7 @@ extractValueDefs = extractDefinitions valueDef
   where
     valueDef (SAST.ValueDef qvr expr spanA) = do
       (typedExpr, cs) <- constrain' expr
-      modify (over (batch . TAST.valueDefs) (Map.insert qvr typedExpr) . over constraints (++ cs))
+      modify (over (batch . TAST.valueDefs) (Map.insert qvr (TAST.ValueDef typedExpr spanA)) . over constraints (++ cs))
     valueDef _ = return ()
 
 extractDefinitions :: (SAST.Definition -> Constrain ()) -> Constrain ()

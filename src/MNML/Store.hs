@@ -2,8 +2,10 @@ module MNML.Store
     ( store
     ) where
 
-import qualified MNML.AST.Type as TAST
-import           MNML.Error    (Fallible)
+import           Control.Monad.Except (throwError)
+import qualified MNML.AST.Type        as TAST
+import           MNML.Error           (Error (StoreError), Fallible,
+                                       StoreError (Placeholder''))
 
 store :: TAST.Batch -> Fallible ()
-store = _
+store _batch = throwError [StoreError Placeholder'']
