@@ -1,6 +1,5 @@
 module MNML.Constrain
-    ( ConstrainRes (..)
-    , constrain
+    ( constrain
     ) where
 
 import           Control.Monad        (foldM, mapAndUnzipM)
@@ -18,7 +17,9 @@ import           MNML.AST.Span        (spanOf)
 import qualified MNML.AST.Span        as SAST
 import           MNML.AST.Type        (typeOf)
 import qualified MNML.AST.Type        as TAST
-import           MNML.Base            (ModName, QualifiedReference, ValName)
+import           MNML.Base            (ModName, QualifiedConstructorReference,
+                                       QualifiedTypeReference,
+                                       QualifiedValueReference, ValName)
 import           MNML.CompilerState   (CompilerState (..), lookupType,
                                        lookupVal, varIdPlusPlus)
 import qualified MNML.Constraint      as C
@@ -30,23 +31,21 @@ import qualified MNML.Type            as T
 type Bindings = Map ValName T.Type
 
 -- "We don't know what type 'doThing' is, let's find out later"
-type PendingType = (QualifiedReference, T.Type, SAST.SourceSpan)
-
--- e.g. Just Int
-type Constructor = (Text, [T.Type])
+type PendingType = (QualifiedValueReference, T.Type, SAST.SourceSpan)
 
 data ConstrainEnv
   = ConstrainEnv
-      { _bindings :: Bindings
+      { _batch        :: TAST.Batch
+      , _bindings     :: Bindings
       , _constraints' :: [C.Constraint]
-      , _definitions :: [SAST.Definition]
-      , _errors :: [ConstrainError]
-      , _module :: ModName
+      , _definitions  :: [SAST.Definition]
+      , _errors       :: [ConstrainError]
+      , _module       :: ModName
       , _pendingTypes :: [PendingType]
-      , _typeDefs' :: Map QualifiedReference ([Constructor], SAST.SourceSpan)
-      , _typeAliasDefs' :: Map QualifiedReference (T.Type, SAST.SourceSpan)
-      , _typedExprs' :: Map QualifiedReference TAST.Expr
       }
+
+batch :: Lens' ConstrainEnv TAST.Batch
+batch = lens _batch (\ce bin -> ce {_batch = bin})
 
 bindings :: Lens' ConstrainEnv Bindings
 bindings = lens _bindings (\ce bin -> ce {_bindings = bin})
@@ -60,36 +59,17 @@ errors = lens _errors (\ce errs -> ce { _errors = errs } )
 pendingTypes :: Lens' ConstrainEnv [PendingType]
 pendingTypes = lens _pendingTypes (\ce pt -> ce {_pendingTypes = pt})
 
-typeDefs :: Lens' ConstrainEnv (Map QualifiedReference ([Constructor], SAST.SourceSpan))
-typeDefs = lens _typeDefs' (\ce td -> ce {_typeDefs' = td})
-
-typeAliasDefs :: Lens' ConstrainEnv (Map QualifiedReference (T.Type, SAST.SourceSpan))
-typeAliasDefs = lens _typeAliasDefs' (\ce ta -> ce {_typeAliasDefs' = ta})
-
-typedExprs :: Lens' ConstrainEnv (Map QualifiedReference TAST.Expr)
-typedExprs = lens _typedExprs' (\ce te -> ce {_typedExprs' = te})
-
-initialEnv :: ModName -> [SAST.Definition] -> ConstrainEnv
+initialEnv :: ModName -> SAST.Batch -> ConstrainEnv
 initialEnv modu defs  =
   ConstrainEnv
-    { _bindings = Map.empty
+    { _batch = TAST.Batch { _typeDefs = Map.empty, _typeAliasDefs = Map.empty, _valueDefs = Map.empty}
+    , _bindings = Map.empty
     , _constraints' = []
     , _definitions = defs
     , _errors = []
     , _module = modu
     , _pendingTypes = []
-    , _typeAliasDefs' = Map.empty
-    , _typeDefs' = Map.empty
-    , _typedExprs' = Map.empty
     }
-
-data ConstrainRes
-  = ConstrainRes
-      { _typeDefs :: Map QualifiedReference ([Constructor], SAST.SourceSpan)
-      , _typeAliasDefs :: Map QualifiedReference (T.Type, SAST.SourceSpan)
-      , _typedExprs :: Map QualifiedReference TAST.Expr
-      , _constraints :: [C.Constraint]
-      }
 
 type Constrain a = StateT ConstrainEnv (State CompilerState) a
 
@@ -295,7 +275,7 @@ declareVar name = do
   modify (over bindings (Map.insert name newVarType))
   return newVarType
 
-constructorType :: QualifiedReference -> Constrain (Maybe T.Type)
+constructorType :: QualifiedConstructorReference -> Constrain (Maybe T.Type)
 constructorType qvr = do
   -- Step 1: See if it's in the data being loaded
   -- TODO
@@ -321,17 +301,20 @@ typify (SAST.TRecord fields _) = do
   return (T.Record . Map.fromList <$> sequence fieldTypes)
 typify (SAST.TVar name _) = Just <$> freshTypeVar name []
 
-moduleNamedType :: QualifiedReference -> Constrain (Maybe T.Type)
+moduleNamedType :: QualifiedTypeReference -> Constrain (Maybe T.Type)
 moduleNamedType qvr = do
   -- Step 1: See if it's in the data being loaded
   -- TODO
   -- Step 2: See if it's in the store
   lift (gets (`lookupType` qvr))
 
-convertConstructor :: (Text, [SAST.Type]) -> Constrain (Text, [TAST.Type])
-convertConstructor (cName, cArgs) = do
-  newArgs <- foldM _ [] cArgs
-  return (cName, newArgs)
+-- TODO: We need pending types in the case of a circular dependence, e.g. (haskell syntax)
+-- data Foo = Foo Bar
+-- data Bar = Bar Foo
+convertConstructor :: SAST.Constructor -> Constrain TAST.Constructor
+convertConstructor (SAST.Constructor cName cArgs span) = do
+  newArgs <- mapM (_ . typify) cArgs
+  return (TAST.Constructor cName newArgs span)
 
 typeToType :: SAST.Type -> Constrain (Maybe TAST.Type)
 typeToType sast@(SAST.TInt spanA) = (TAST.TInt . spanToSpanType spanA <$>) <$> typify sast
@@ -349,14 +332,12 @@ typeToType sast@(SAST.TFun argTypes reType spanA)  = TAST.TFun _ _ (spanToSpanTy
 typeToType sast@(SAST.TRecord fieldSpec spanA) = TAST.TRecord _ (spanToSpanType spanA)
 typeToType sast@(SAST.TVar name spanA) = (TAST.TVar name . spanToSpanType spanA <$>) <$> typify sast
 
-constrain :: [SAST.Definition] -> Fallible ConstrainRes
+constrain :: SAST.Batch -> Fallible (TAST.Batch, [C.Constraint])
 constrain defs = do
-  -- TODO: Figure out module name here
-  let modu = ""
-  res <- lift (execStateT (extractTypeDefs >> extractTypeAliases >> extractValueDefs) (initialEnv modu defs))
+  res <- lift (execStateT (extractTypeDefs >> extractTypeAliases >> extractValueDefs) (initialEnv [] defs))
   case res of
     env@(ConstrainEnv {_errors = []}) ->
-      return (ConstrainRes { _typeDefs = _typeDefs' env, _typeAliasDefs = _typeAliasDefs' env, _typedExprs = _typedExprs' env, _constraints = _constraints' env})
+      return (_batch env, _constraints' env)
 
     (ConstrainEnv {_errors = errs}) ->
       throwError (map ConstrainError errs)
@@ -364,30 +345,27 @@ constrain defs = do
 extractTypeDefs :: Constrain ()
 extractTypeDefs = extractDefinitions typeDef
   where
-    typeDef (SAST.TypeDef name constructors span) = do
-      modu <- gets _module
-      modify (over typeDefs (Map.insert (modu, name) (_, span)))
+    typeDef (SAST.TypeDef qtr constructors span) = do
+      constructors' <- mapM convertConstructor constructors
+      modify (over (batch . TAST.typeDefs) (Map.insert qtr (TAST.TypeDef constructors' span)))
     typeDef _ = return ()
 
 extractTypeAliases :: Constrain ()
 extractTypeAliases = extractDefinitions typeAliasDef
   where
-    typeAliasDef (SAST.TypeAliasDef name sastT span) = do
-      modu <- gets _module
+    typeAliasDef (SAST.TypeAliasDef qtr sastT span) = do
       maybeType <- typify sastT
       case maybeType of
-        Just t -> modify (over typeAliasDefs (Map.insert (modu, name) (t, span)))
-        Nothing -> addError (UnknownType name span)
+        Just t  -> modify (over (batch . TAST.typeAliasDefs) (Map.insert qtr (TAST.TypeAliasDef t span)))
+        Nothing -> addError (UnknownType qtr span)
     typeAliasDef _ = return ()
 
 extractValueDefs :: Constrain ()
 extractValueDefs = extractDefinitions valueDef
   where
-    valueDef (SAST.ValueDef name expr span) = do
-      modu <- gets _module
+    valueDef (SAST.ValueDef qvr expr span) = do
       (typedExpr, cs) <- constrain' expr
-      modify (\env -> env { _typedExprs' = Map.insert (modu, name) typedExpr (_typedExprs' env)
-                          , _constraints' = _constraints' env ++ cs })
+      modify (over (batch . TAST.valueDefs) (Map.insert qvr typedExpr) . over constraints (++ cs))
     valueDef _ = return ()
 
 extractDefinitions :: (SAST.Definition -> Constrain ()) -> Constrain ()

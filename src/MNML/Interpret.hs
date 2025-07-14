@@ -2,9 +2,9 @@ module MNML.Interpret
     ( interpret
     ) where
 import           MNML.AST.Type as TAST
-import           MNML.Base     (QualifiedReference)
+import           MNML.Base     (QualifiedValueReference)
 import           MNML.Error    (Error (RuntimeError), Fallible)
 
 
-interpret :: QualifiedReference -> Fallible TAST.Expr
+interpret :: QualifiedValueReference -> Fallible TAST.Expr
 interpret = _

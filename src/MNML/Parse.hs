@@ -9,9 +9,11 @@ import           Control.Monad.Trans  (lift)
 import           Data.Functor         (($>))
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
-import           MNML.AST.Span        (Definition (..), Expr (..), Literal (..),
-                                       Operator (..), Pattern (..),
-                                       SourceSpan (..), Type (..))
+import           MNML.AST.Span        (Batch, Constructor (..), Definition (..),
+                                       Expr (..), Literal (..), Operator (..),
+                                       Pattern (..), SourceSpan (..), Type (..))
+import           MNML.Base            (ModName, QualifiedTypeReference,
+                                       QualifiedValueReference)
 import           MNML.CompilerState   (CompilerState (..))
 import           MNML.Error           (Error (ParseError), Fallible,
                                        ParseError (..))
@@ -29,7 +31,7 @@ type ParseEnv = ()
 -- I also do not believe that the lifted monad (State CompilerState) is used anymore.  For simplicity, we could consider removal.
 type Parser = ParsecT Text ParseEnv (State CompilerState)
 
-parse :: Text -> Fallible [Definition]
+parse :: Text -> Fallible Batch
 parse rawCode = do
   res <- lift (runParserT MNML.Parse.mod () "load" rawCode)
   case res of
@@ -53,32 +55,33 @@ mod = do
   manyTill def eof
 
 def :: Parser Definition
-def = typeDef <|> typeAliasDef <|> valueDef'
+def = typeDef <|> typeAliasDef <|> valueDef
 
 typeDef :: Parser Definition
 typeDef = captureSpan $ do
-  name <- typeIdentifier
+  name <- qualifiedTypeName
   _ <- equal
   constructors <- sepBy1 constructor bar
   return (TypeDef name constructors)
 
-constructor :: Parser (Text, [Type])
+constructor :: Parser Constructor
 constructor = do
-  name <- typeIdentifier
-  cData <- parens (commaSep pType) <|> pure []
-  return (name, cData)
+  captureSpan $ do
+    name <- typeIdentifier
+    typeArgs <- parens (commaSep pType) <|> pure []
+    return (Constructor name typeArgs)
 
 typeAliasDef :: Parser Definition
 typeAliasDef = captureSpan $ do
   _ <- reserved "alias"
   expansionType <- pType
   _ <- reserved "as"
-  name <- typeIdentifier
+  name <- qualifiedTypeName
   return (TypeAliasDef name expansionType)
 
-valueDef' :: Parser Definition
-valueDef' = captureSpan $ do
-  name <- identifier
+valueDef :: Parser Definition
+valueDef = captureSpan $ do
+  name <- qualifiedValueName
   _ <- equal
   expr <- expression
   return (ValueDef name expr)
@@ -276,6 +279,17 @@ fieldPattern = do
   _ <- colon
   pat <- pattern
   return (name, pat)
+
+-- Helpers
+
+qualifiedValueName :: Parser QualifiedValueReference
+qualifiedValueName = liftA2 (,) moduleName identifier
+
+qualifiedTypeName :: Parser QualifiedTypeReference
+qualifiedTypeName = liftA2 (,) moduleName typeIdentifier
+
+moduleName :: Parser ModName
+moduleName = sepBy1 identifier (char '/')
 
 -- "Lexer"
 

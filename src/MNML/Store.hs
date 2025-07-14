@@ -3,8 +3,7 @@ module MNML.Store
     ) where
 
 import qualified MNML.AST.Type as TAST
-import           MNML.Base     (QualifiedReference)
 import           MNML.Error    (Fallible)
 
-store :: QualifiedReference -> [TAST.Expr] -> Fallible ()
+store :: TAST.Batch -> Fallible ()
 store = _

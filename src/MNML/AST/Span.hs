@@ -1,5 +1,6 @@
 module MNML.AST.Span
-    ( Constructor
+    ( Batch
+    , Constructor (..)
     , Definition (..)
     , Expr (..)
     , Literal (..)
@@ -11,6 +12,7 @@ module MNML.AST.Span
     ) where
 
 import           Data.Text   (Text)
+import           MNML.Base   (QualifiedTypeReference, QualifiedValueReference)
 import           Text.Parsec (SourcePos)
 
 data SourceSpan
@@ -20,15 +22,20 @@ data SourceSpan
       }
   deriving (Eq, Show)
 
-type Constructor = (Text, [Type])
+type Batch = [Definition]
 
 data Definition
   -- "MyType = Foo(String) | Bar(Int, String)"
-  = TypeDef Text [Constructor] SourceSpan
+  = TypeDef QualifiedTypeReference [Constructor] SourceSpan
   -- "alias {name: String} as User" or "alias Int as Price"
-  | TypeAliasDef Text Type SourceSpan
+  | TypeAliasDef QualifiedTypeReference Type SourceSpan
   -- foo = 1 + 3
-  | ValueDef Text Expr SourceSpan
+  | ValueDef QualifiedValueReference Expr SourceSpan
+  deriving (Eq, Show)
+
+-- e.g. Just Int; Name, TypeArgs, Span
+data Constructor
+  = Constructor Text [Type] SourceSpan
   deriving (Eq, Show)
 
 data Expr

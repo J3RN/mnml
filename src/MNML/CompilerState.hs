@@ -12,7 +12,8 @@ import           Data.Map            (Map, (!?))
 import qualified Data.Map            as Map
 import           Lens.Micro          (Lens', lens)
 import qualified MNML.AST.Type       as TAST
-import           MNML.Base           (QualifiedReference)
+import           MNML.Base           (QualifiedTypeReference,
+                                      QualifiedValueReference)
 import qualified MNML.Type           as T
 
 -- The compiler state contains caches and the type variable counter
@@ -21,9 +22,9 @@ type Identifier = String
 
 data CompilerState
   = CompilerState
-      { _valueNames       :: Map QualifiedReference [Identifier]
+      { _valueNames       :: Map QualifiedValueReference [Identifier]
       , _valueDefinitions :: Map Identifier TAST.Expr
-      , _typeNames        :: Map QualifiedReference [Identifier]
+      , _typeNames        :: Map QualifiedTypeReference [Identifier]
       , _typeDefinitions  :: Map Identifier T.Type
       , _nextTypeId       :: T.VarId
       }
@@ -47,7 +48,7 @@ nextTypeId = lens _nextTypeId (\cs vi -> cs {_nextTypeId = vi})
 -- Helpers
 
 -- Lookup a type by name
-lookupType :: CompilerState -> QualifiedReference -> Maybe T.Type
+lookupType :: CompilerState -> QualifiedTypeReference -> Maybe T.Type
 lookupType cs qvr = do
   tIds <- _typeNames cs !? qvr
   case tIds of
@@ -55,7 +56,7 @@ lookupType cs qvr = do
     (tId:_) -> _typeDefinitions cs !? tId
 
 -- Lookup a value by name
-lookupVal :: CompilerState -> QualifiedReference -> Maybe TAST.Expr
+lookupVal :: CompilerState -> QualifiedValueReference -> Maybe TAST.Expr
 lookupVal cs qvr = do
   vIds <- _valueNames cs !? qvr
   case vIds of

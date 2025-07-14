@@ -13,7 +13,9 @@ import           Control.Monad.State  (State)
 import           Data.Set             (Set)
 import           Data.Text            (Text)
 import qualified MNML.AST.Span        as SAST
-import           MNML.Base            (QualifiedReference)
+import           MNML.Base            (QualifiedConstructorReference,
+                                       QualifiedTypeReference,
+                                       QualifiedValueReference)
 import           MNML.CompilerState   (CompilerState)
 import qualified MNML.Type            as T
 import qualified Text.Parsec          as Parsec
@@ -30,12 +32,12 @@ data Error
 data ParseError
   = ParsecError Parsec.ParseError
   | ModuleNotFound Text
-  | ValueNotFound QualifiedReference
+  | ValueNotFound QualifiedValueReference
   deriving (Eq, Show)
 
 data ConstrainError
-  = UnknownConstructor QualifiedReference SAST.SourceSpan
-  | UnknownType QualifiedReference SAST.SourceSpan
+  = UnknownConstructor QualifiedConstructorReference SAST.SourceSpan
+  | UnknownType QualifiedTypeReference SAST.SourceSpan
   deriving (Eq, Show)
 
 data UnificationError

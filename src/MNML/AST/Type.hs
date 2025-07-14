@@ -1,22 +1,60 @@
 module MNML.AST.Type
-    ( Expr (..)
+    ( Batch (..)
+    , Constructor (..)
+    , Expr (..)
     , Literal (..)
     , Operator (..)
     , Pattern (..)
     , SourceSpanType (..)
     , Type (..)
+    , TypeAliasDef (..)
+    , TypeDef (..)
     , Typed (..)
-    , TypedValueDef
+    , ValueDef (..)
     , sourceSpanTypeToSourceSpan
+    , typeAliasDefs
+    , typeDefs
+    , valueDefs
     ) where
 
+import           Data.Map      (Map)
 import           Data.Text     (Text)
+import           Lens.Micro    (Lens', lens)
 import           MNML.AST.Span (SourceSpan (..), Spanned (..))
-import           MNML.Base     (QualifiedReference)
+import           MNML.Base     (QualifiedTypeReference, QualifiedValueReference)
 import qualified MNML.Type     as T
 import           Text.Parsec   (SourcePos)
 
-type TypedValueDef = (QualifiedReference, Expr)
+data Batch
+  = Batch
+      { _typeDefs      :: Map QualifiedTypeReference TypeDef
+      , _typeAliasDefs :: Map QualifiedTypeReference TypeAliasDef
+      , _valueDefs     :: Map QualifiedValueReference Expr
+      }
+
+typeDefs :: Lens' Batch (Map QualifiedTypeReference TypeDef)
+typeDefs = lens _typeDefs (\ce td -> ce {_typeDefs = td})
+
+typeAliasDefs :: Lens' Batch (Map QualifiedTypeReference TypeAliasDef)
+typeAliasDefs = lens _typeAliasDefs (\ce ta -> ce {_typeAliasDefs = ta})
+
+valueDefs :: Lens' Batch (Map QualifiedValueReference Expr)
+valueDefs = lens _valueDefs (\ce te -> ce {_valueDefs = te})
+
+data TypeDef
+  = TypeDef [Constructor] SourceSpan
+
+data TypeAliasDef
+  = TypeAliasDef T.Type SourceSpan
+
+-- The span refers to the entire span of the definition whereas the Expr's span
+-- refers only to the RHS
+data ValueDef
+  = ValueDef Expr SourceSpan
+
+-- e.g. Just Int; Name, TypeArgs, Span
+data Constructor
+  = Constructor Text [T.Type] SourceSpan
 
 data SourceSpanType
   = SourceSpanType
