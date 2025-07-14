@@ -20,7 +20,7 @@ import           MNML.Error           (Error (ParseError), Fallible,
 import           Text.Parsec          (ParsecT, alphaNum, char, eof,
                                        getPosition, lower, many, many1,
                                        manyTill, oneOf, option, runParserT,
-                                       sepBy1, space, try, upper, (<|>))
+                                       sepBy, sepBy1, space, try, upper, (<|>))
 import qualified Text.Parsec.Token    as Tok
 
 -- Data Types
@@ -33,7 +33,7 @@ type Parser = ParsecT Text ParseEnv (State CompilerState)
 
 parse :: Text -> Fallible Batch
 parse rawCode = do
-  res <- lift (runParserT MNML.Parse.mod () "load" rawCode)
+  res <- lift (runParserT batch () "load" rawCode)
   case res of
     Left pError -> throwError [ParseError (ParsecError pError)]
     Right defs  -> return defs
@@ -49,8 +49,8 @@ captureSpan p = do
   return (node (SourceSpan start end))
 
 -- Top-level Parsers
-mod :: Parser [Definition]
-mod = do
+batch :: Parser Batch
+batch = do
   _ <- many whiteSpace
   manyTill def eof
 
@@ -289,7 +289,7 @@ qualifiedTypeName :: Parser QualifiedTypeReference
 qualifiedTypeName = liftA2 (,) moduleName typeIdentifier
 
 moduleName :: Parser ModName
-moduleName = sepBy1 identifier (char '/')
+moduleName = sepBy identifier (char '/')
 
 -- "Lexer"
 
