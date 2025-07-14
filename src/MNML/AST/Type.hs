@@ -54,7 +54,7 @@ data ValueDef
 
 -- e.g. Just Int; Name, TypeArgs, Span
 data Constructor
-  = Constructor Text [T.Type] SourceSpan
+  = Constructor Text [(T.Type, SourceSpan)] SourceSpan
 
 data SourceSpanType
   = SourceSpanType

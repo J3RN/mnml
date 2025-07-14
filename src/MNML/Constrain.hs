@@ -9,8 +9,10 @@ import           Control.Monad.State  (State, StateT, execStateT, gets, lift,
 import           Data.Bifunctor       (bimap, second)
 import           Data.Map             (Map, (!?))
 import qualified Data.Map             as Map
+import           Data.Maybe           (fromMaybe)
 import qualified Data.Set             as Set
 import           Data.Text            (Text)
+import qualified Data.Text            as Text
 import           Lens.Micro           (Lens', lens, over, set)
 import           Lens.Micro.Extras    (view)
 import           MNML.AST.Span        (spanOf)
@@ -312,25 +314,19 @@ moduleNamedType qvr = do
 -- data Foo = Foo Bar
 -- data Bar = Bar Foo
 convertConstructor :: SAST.Constructor -> Constrain TAST.Constructor
-convertConstructor (SAST.Constructor cName cArgs span) = do
-  newArgs <- mapM (_ . typify) cArgs
-  return (TAST.Constructor cName newArgs span)
-
-typeToType :: SAST.Type -> Constrain (Maybe TAST.Type)
-typeToType sast@(SAST.TInt spanA) = (TAST.TInt . spanToSpanType spanA <$>) <$> typify sast
-typeToType sast@(SAST.TFloat spanA)  = (TAST.TFloat . spanToSpanType spanA <$>) <$> typify sast
-typeToType sast@(SAST.TChar spanA)   = (TAST.TChar . spanToSpanType spanA <$>) <$> typify sast
-typeToType sast@(SAST.TString spanA) = (TAST.TString . spanToSpanType spanA <$>) <$> typify sast
--- ???
-typeToType sast@(SAST.TNamedType name spanA)  = do
-  maybeT <- typify sast
-  case maybeT of
-    Just t  -> _
-    Nothing -> return (Just (giveUp (UnknownType name spanA) name))
-typeToType sast@(SAST.TList listType spanA)  = TAST.TList _ (spanToSpanType spanA)
-typeToType sast@(SAST.TFun argTypes reType spanA)  = TAST.TFun _ _ (spanToSpanType spanA)
-typeToType sast@(SAST.TRecord fieldSpec spanA) = TAST.TRecord _ (spanToSpanType spanA)
-typeToType sast@(SAST.TVar name spanA) = (TAST.TVar name . spanToSpanType spanA <$>) <$> typify sast
+convertConstructor (SAST.Constructor cName cArgs spanA) = do
+  newArgs <- mapM convertType cArgs
+  return (TAST.Constructor cName newArgs spanA)
+  where convertType :: SAST.Type -> Constrain (T.Type, SAST.SourceSpan)
+        convertType sast = do
+          maybeT <- typify sast
+          modName <- gets _module
+          t <- fromMaybe <$> giveUp (UnknownType (modName, nameOf sast) (spanOf sast)) (Text.pack (show sast)) <*> pure maybeT
+          return (t, spanOf sast)
+        nameOf :: SAST.Type -> Text
+        nameOf (SAST.TNamedType name _) = name
+        -- Really, this clause should never be hit
+        nameOf sast                     = Text.pack (show sast)
 
 constrain :: SAST.Batch -> Fallible (TAST.Batch, [C.Constraint])
 constrain defs = do
@@ -345,25 +341,25 @@ constrain defs = do
 extractTypeDefs :: Constrain ()
 extractTypeDefs = extractDefinitions typeDef
   where
-    typeDef (SAST.TypeDef qtr constructors span) = do
+    typeDef (SAST.TypeDef qtr constructors spanA) = do
       constructors' <- mapM convertConstructor constructors
-      modify (over (batch . TAST.typeDefs) (Map.insert qtr (TAST.TypeDef constructors' span)))
+      modify (over (batch . TAST.typeDefs) (Map.insert qtr (TAST.TypeDef constructors' spanA)))
     typeDef _ = return ()
 
 extractTypeAliases :: Constrain ()
 extractTypeAliases = extractDefinitions typeAliasDef
   where
-    typeAliasDef (SAST.TypeAliasDef qtr sastT span) = do
+    typeAliasDef (SAST.TypeAliasDef qtr sastT spanA) = do
       maybeType <- typify sastT
       case maybeType of
-        Just t  -> modify (over (batch . TAST.typeAliasDefs) (Map.insert qtr (TAST.TypeAliasDef t span)))
-        Nothing -> addError (UnknownType qtr span)
+        Just t  -> modify (over (batch . TAST.typeAliasDefs) (Map.insert qtr (TAST.TypeAliasDef t spanA)))
+        Nothing -> addError (UnknownType qtr spanA)
     typeAliasDef _ = return ()
 
 extractValueDefs :: Constrain ()
 extractValueDefs = extractDefinitions valueDef
   where
-    valueDef (SAST.ValueDef qvr expr span) = do
+    valueDef (SAST.ValueDef qvr expr spanA) = do
       (typedExpr, cs) <- constrain' expr
       modify (over (batch . TAST.valueDefs) (Map.insert qvr typedExpr) . over constraints (++ cs))
     valueDef _ = return ()

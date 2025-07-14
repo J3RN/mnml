@@ -42,7 +42,7 @@ data ConstrainError
 
 data UnificationError
   = ArgumentLengthMismatch SAST.SourceSpan
-  | UError T.Type T.Type SAST.SourceSpan
+  | UnifyError T.Type T.Type SAST.SourceSpan
   | OccursError T.Type T.Type SAST.SourceSpan
   | ExpectedTraits T.Type (Set T.Trait) SAST.SourceSpan
   | ExpectedFields T.Type T.FieldSpec SAST.SourceSpan
