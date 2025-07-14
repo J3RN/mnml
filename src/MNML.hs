@@ -1,7 +1,7 @@
 module MNML
-    ( interpet
+    ( interpret
     , load
     ) where
 
-import           MNML.Interpret (interpet)
+import           MNML.Interpret (interpret)
 import           MNML.Load      (load)
