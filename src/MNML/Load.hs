@@ -11,8 +11,4 @@ import qualified MNML.Store     as Store
 import qualified MNML.Unify     as Unify
 
 load :: Text -> Fallible ()
-load code = do
-  sastBatch <- Parse.parse code
-  constrainRes <- Constrain.constrain sastBatch
-  unifyRes <- Unify.unify constrainRes
-  Store.store unifyRes
+load code = Parse.parse code >>= Constrain.constrain >>= Unify.unify >>= Store.store
