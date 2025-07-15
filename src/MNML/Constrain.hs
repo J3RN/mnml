@@ -2,6 +2,7 @@ module MNML.Constrain
     ( constrain
     ) where
 
+import           Control.Applicative  ((<|>))
 import           Control.Monad        (foldM, mapAndUnzipM)
 import           Control.Monad.Except (MonadError (throwError))
 import           Control.Monad.State  (State, StateT, execStateT, gets, lift,
@@ -31,7 +32,7 @@ import qualified MNML.Type            as T
 -- Local vars, e.g. "x is Int"
 type Bindings = Map ValName T.Type
 
--- "We don't know what type 'doThing' is, let's find out later"
+-- "We created a type for 'doThing', but we should find constraints later."
 type PendingType = (QualifiedValueReference, T.Type, SAST.SourceSpan)
 
 data ConstrainEnv
@@ -105,19 +106,29 @@ addError err = modify (over errors (err:))
 giveUp :: ConstrainError -> Text -> Constrain T.Type
 giveUp err name = addError err >> freshTypeVar name []
 
+getBinding :: Text -> ConstrainEnv -> Maybe T.Type
+getBinding name = (!? name) . view bindings
+
+
+valueDefs :: ConstrainEnv -> Map QualifiedValueReference TAST.ValueDef
+valueDefs = TAST._valueDefs . view batch
+
+getBatchValueType :: QualifiedValueReference -> ConstrainEnv -> Maybe T.Type
+getBatchValueType qvr env = (\(TAST.ValueDef expr _) -> typeOf expr) <$> Map.lookup qvr (valueDefs env)
+
 -- The real meat
 
 constrain' :: SAST.Expr -> Constrain (TAST.Expr, [C.Constraint])
 constrain' (SAST.EVar name spanA) = do
-  lookupRes <- gets ((!? name) . view bindings)
+  -- TODO: Assumes local (same module); need to update to support foreign references
+  modu <- gets _module
+  lookupRes <- gets (liftA2 (<|>) (getBinding name) (getBatchValueType (modu, name)))
   case lookupRes of
     -- If it's bound, we "know" its type
     Just t -> return (TAST.EVar name (spanToSpanType spanA t), [])
     -- Otherwise, this must be a reference.  Give it a type var and add it to the queue for later.
     Nothing -> do
       newTVar <- freshTypeVar name []
-      -- TODO: Assumes local (same module); need to update to support foreign references
-      modu <- gets _module
       modify (over pendingTypes (((modu, name), newTVar, spanA) :))
       return (TAST.EVar name (spanToSpanType spanA newTVar), [])
 constrain' (SAST.EConstructor name spanA) = do
@@ -279,9 +290,13 @@ declareVar name = do
 constructorType :: QualifiedConstructorReference -> Constrain (Maybe T.Type)
 constructorType qvr = do
   -- Step 1: See if it's in the data being loaded
-  -- TODO
-  -- Step 2: See if it's in the store
-  (typeOf <$>) <$> lift (gets (`lookupVal` qvr))
+  -- *Because we analyze all type defs before analyzing values, this should be fine for any value lookups*
+  -- A constructor is a value (function that converts args to a ADT)
+  lookupRes <- gets (Map.lookup qvr . TAST._valueDefs . view batch)
+  case lookupRes of
+    Just (TAST.ValueDef expr _) -> return (Just (typeOf expr))
+    -- Step 2: See if it's in the store
+    Nothing                     -> (typeOf <$>) <$> lift (gets (`lookupVal` qvr))
 
 typify :: SAST.Type -> Constrain (Maybe T.Type)
 typify (SAST.TInt _) = return (Just T.Int)
@@ -290,6 +305,7 @@ typify (SAST.TChar _) = return (Just T.Char)
 typify (SAST.TString _) = return (Just T.String)
 typify (SAST.TNamedType name _) = do
   modName <- gets _module
+  -- TODO: This is a reference, put it on the stack
   moduleNamedType (modName, name)
 typify (SAST.TList t _) = (T.List <$>) <$> typify t
 typify (SAST.TFun argTypes resType _) = do
