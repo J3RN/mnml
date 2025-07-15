@@ -31,6 +31,7 @@ data Batch
       , _typeAliasDefs :: Map QualifiedTypeReference TypeAliasDef
       , _valueDefs     :: Map QualifiedValueReference ValueDef
       }
+  deriving (Eq, Show)
 
 typeDefs :: Lens' Batch (Map QualifiedTypeReference TypeDef)
 typeDefs = lens _typeDefs (\ce td -> ce {_typeDefs = td})

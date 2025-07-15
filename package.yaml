@@ -79,4 +79,5 @@ tests:
       - hspec
       - hspec-contrib
     default-extensions:
+      - LambdaCase
       - OverloadedStrings

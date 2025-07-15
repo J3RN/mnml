@@ -2,19 +2,23 @@ module MNML.Unify
     ( unify
     ) where
 
-import           Control.Monad.State (State, StateT, lift, modify)
-import           Data.Function       (on)
-import qualified Data.List           as List
-import           Data.Map            (Map)
-import qualified Data.Map            as Map
-import qualified Data.Set            as Set
-import           Lens.Micro          (Lens', lens, over)
-import qualified MNML.AST.Span       as SAST
-import qualified MNML.AST.Type       as TAST
-import           MNML.CompilerState  (CompilerState (..), varIdPlusPlus)
-import           MNML.Constraint     (Constraint (..))
-import           MNML.Error          (Fallible, UnificationError (..))
-import qualified MNML.Type           as T
+import           Control.Monad.Except (throwError)
+import           Control.Monad.State  (State, StateT, execStateT, lift, modify,
+                                       runStateT)
+import           Data.Bifunctor       (bimap, second)
+import           Data.Function        (on)
+import qualified Data.List            as List
+import           Data.Map             (Map)
+import qualified Data.Map             as Map
+import qualified Data.Set             as Set
+import           Lens.Micro           (Lens', lens, over)
+import qualified MNML.AST.Span        as SAST
+import qualified MNML.AST.Type        as TAST
+import           MNML.CompilerState   (CompilerState (..), varIdPlusPlus)
+import           MNML.Constraint      (Constraint (..))
+import           MNML.Error           (Error (UnificationError), Fallible,
+                                       UnificationError (..))
+import qualified MNML.Type            as T
 
 -- Really, Subst is a mapping of type *variables* to types (variables or otherwise)
 type Subst = Map T.Type T.Type
@@ -156,115 +160,54 @@ applySubst _ T.Int = T.Int
 applySubst _ T.Float = T.Float
 applySubst _ T.Char = T.Char
 applySubst _ T.String = T.String
-applySubst subst (T.List elemType) = T.List (applySubst subst elemType)
-applySubst subst (T.Fun argTypes retType) = T.Fun (map (applySubst subst) argTypes) (applySubst subst retType)
-applySubst subst (T.Record fieldSpec) = T.Record (Map.map (applySubst subst) fieldSpec)
+applySubst subs (T.List elemType) = T.List (applySubst subs elemType)
+applySubst subs (T.Fun argTypes retType) = T.Fun (map (applySubst subs) argTypes) (applySubst subs retType)
+applySubst subs (T.Record fieldSpec) = T.Record (Map.map (applySubst subs) fieldSpec)
 applySubst _ (T.AlgebraicType name) = T.AlgebraicType name
-applySubst subst (T.TypeAlias name t) = T.TypeAlias name (applySubst subst t)
+applySubst subs (T.TypeAlias name t) = T.TypeAlias name (applySubst subs t)
 applySubst (var1, rep) var2 | var1 == var2 = rep
 applySubst _ var@(T.Var {}) = var
-applySubst subst (T.PartialRecord fieldSpec prId) = T.PartialRecord (Map.map (applySubst subst) fieldSpec) prId
+applySubst subs (T.PartialRecord fieldSpec prId) = T.PartialRecord (Map.map (applySubst subs) fieldSpec) prId
 
 unify :: (TAST.Batch, [Constraint]) -> Fallible TAST.Batch
-unify (batch, _cs) = return batch
+unify (batch, cs) = do
+  -- TODO: Really unify' shouldn't return anything; the errors should be in the env
+  (maybeErr, env) <- lift (runStateT (unify' cs) (UnifyEnv {_errors = [], _subst = Map.empty}))
+  case maybeErr of
+    Just err -> throwError [UnificationError err]
+    Nothing  -> return (batch {TAST._valueDefs = Map.map (resolveTypeAnno (_subst env)) (TAST._valueDefs batch)})
 
--- valueType ::
---   QualifiedReference -> ExceptT [UnificationError] (State CompilerState) [TAST.TypedValueDef]
--- valueType qvr = do
---     unificationRes <- valueType' qvr
---     case unificationRes of
---       Right tvds -> mapM_ setCache tvds $> Right (List.nubBy ((==) `on` fst) tvds)
---       Left errs -> return (Left errs)
---   where
---     valueType' ::
---       QualifiedReference -> State CompilerState (Either [UnificationError] [TAST.TypedValueDef])
---     valueType' qvr' = do
---       constraintsRes <- C.valueConstraints qvr'
---       case constraintsRes of
---         Right
---           (C.ConstrainRes {_typedExpr = expr, _constraints = constraints, _pendingTypes' = pendingTypeRefs}) -> do
---           -- Populate the cache with an unrefined value to prevent circular references from creating infinite loops
---           setCache (qvr', expr)
---           -- Create additional constraints by finding the types of dependent values
---           depRes <- foldM foldDep (Right ([], [])) pendingTypeRefs
---           case depRes of
---             (Left errs) -> return (Left errs)
---             (Right (depConstraints, tvds)) -> do
---               res <- runStateT (unify (constraints ++ depConstraints)) Map.empty
---               case res of
---                 (Just err, _) -> return (Left [err])
---                 (Nothing, subst) -> return (Right ((qvr', resolveTypeAnno subst expr) : tvds)) -- TODO: "populate down"
---         Left constrainErrs -> return (Left (map ConstraintError constrainErrs))
---     foldDep ::
---       Either [UnificationError] ([Constraint], [TAST.TypedValueDef]) ->
---       (QualifiedReference, T.Type, SAST.SourceSpan) ->
---       State CompilerState (Either [UnificationError] ([Constraint], [TAST.TypedValueDef]))
---     foldDep (Right (cs, tvds)) (qvr'', t, s) = do
---       typedExprRes <- valueType qvr''
---       case typedExprRes of
---         Right typedExprs -> do
---           dupedDepType <- dupTypeVars (TAST.typeOf (snd (head typedExprs)))
---           return (Right (CEqual s t dupedDepType : cs, typedExprs ++ tvds))
---         Left errs -> return (Left errs)
---     foldDep (Left errs) _ = return (Left errs)
---     resolveTypeAnno :: Subst -> TAST.Expr -> TAST.Expr
---     resolveTypeAnno subst (TAST.EVar name sst) = TAST.EVar name (maybeSubType subst sst)
---     resolveTypeAnno subst (TAST.EConstructor name sst) = TAST.EConstructor name (maybeSubType subst sst)
---     resolveTypeAnno subst (TAST.ELit lit sst) = TAST.ELit lit (maybeSubType subst sst)
---     resolveTypeAnno subst (TAST.ELambda params body sst) = TAST.ELambda params (resolveTypeAnno subst body) (maybeSubType subst sst)
---     resolveTypeAnno subst (TAST.EApp fun args sst) =
---       TAST.EApp (resolveTypeAnno subst fun) (map (resolveTypeAnno subst) args) (maybeSubType subst sst)
---     resolveTypeAnno subst (TAST.ECase subj branches sst) =
---       TAST.ECase
---         (resolveTypeAnno subst subj)
---         (map (bimap (resolvePatternTypeAnno' subst) (resolveTypeAnno subst)) branches)
---         (maybeSubType subst sst)
---     resolveTypeAnno subst (TAST.EBinary op left right sst) =
---       TAST.EBinary
---         op
---         (resolveTypeAnno subst left)
---         (resolveTypeAnno subst right)
---         (maybeSubType subst sst)
---     resolveTypeAnno subst (TAST.ERecord fieldSpec sst) = TAST.ERecord (map (second (resolveTypeAnno subst)) fieldSpec) (maybeSubType subst sst)
---     resolveTypeAnno subst (TAST.EList elems sst) = TAST.EList (map (resolveTypeAnno subst) elems) (maybeSubType subst sst)
---     resolvePatternTypeAnno' :: Subst -> TAST.Pattern -> TAST.Pattern
---     resolvePatternTypeAnno' subst (TAST.PVar name sst) = TAST.PVar name (maybeSubType subst sst)
---     resolvePatternTypeAnno' subst (TAST.PDiscard sst) = TAST.PDiscard (maybeSubType subst sst)
---     resolvePatternTypeAnno' subst (TAST.PConstructor name params sst) = TAST.PConstructor name (map (resolvePatternTypeAnno' subst) params) (maybeSubType subst sst)
---     resolvePatternTypeAnno' subst (TAST.PRecord fieldSpec sst) = TAST.PRecord (map (second (resolvePatternTypeAnno' subst)) fieldSpec) (maybeSubType subst sst)
---     resolvePatternTypeAnno' subst (TAST.PList elems sst) = TAST.PList (map (resolvePatternTypeAnno' subst) elems) (maybeSubType subst sst)
---     resolvePatternTypeAnno' subst (TAST.PLiteral lit sst) = TAST.PLiteral lit (maybeSubType subst sst)
---     maybeSubType :: Subst -> TAST.SourceSpanType -> TAST.SourceSpanType
---     maybeSubType subst sst = sst {TAST._type = foldl (flip applySubst) (TAST._type sst) (Map.toList subst)}
---     dupTypeVars :: T.Type -> State CompilerState T.Type
---     dupTypeVars t = evalStateT (dupTypeVars' t) Map.empty
---     dupTypeVars' :: T.Type -> Unify T.Type
---     dupTypeVars' T.Int = return T.Int
---     dupTypeVars' T.Float = return T.Float
---     dupTypeVars' T.Char = return T.Char
---     dupTypeVars' T.String = return T.String
---     dupTypeVars' (T.List var) = T.List <$> dupTypeVars' var
---     dupTypeVars' (T.Fun argTypes retType) = T.Fun <$> mapM dupTypeVars' argTypes <*> dupTypeVars' retType
---     dupTypeVars' (T.Record fieldSpec) =
---       T.Record . Map.fromList <$> mapM (\(name, t) -> (name,) <$> dupTypeVars' t) (Map.toList fieldSpec)
---     dupTypeVars' (T.AlgebraicType name) = return (T.AlgebraicType name)
---     dupTypeVars' (T.TypeAlias name t) = T.TypeAlias name <$> dupTypeVars' t
---     dupTypeVars' var@(T.Var name traits _) = do
---       existingTypeRes <- gets (!? var)
---       case existingTypeRes of
---         Just t -> return t
---         Nothing -> do
---           newVar <- T.Var name traits <$> lift varIdPlusPlus
---           modify (Map.insert var newVar)
---           return newVar
---     dupTypeVars' recVar@(T.PartialRecord fieldSpec _) = do
---       existingTypeRes <- gets (!? recVar)
---       case existingTypeRes of
---         Just t -> return t
---         Nothing -> do
---           newRecVar <-
---             T.PartialRecord . Map.fromList
---               <$> mapM (\(name, t) -> (name,) <$> dupTypeVars' t) (Map.toList fieldSpec)
---               <*> lift varIdPlusPlus
---           modify (Map.insert recVar newRecVar)
---           return newRecVar
+resolveTypeAnno :: Subst -> TAST.ValueDef -> TAST.ValueDef
+resolveTypeAnno subs (TAST.ValueDef expr spanA) = TAST.ValueDef (resolveTypeAnno' subs expr) spanA
+
+resolveTypeAnno' :: Subst -> TAST.Expr -> TAST.Expr
+resolveTypeAnno' subs (TAST.EVar name sst) = TAST.EVar name (maybeSubType subs sst)
+resolveTypeAnno' subs (TAST.EConstructor name sst) = TAST.EConstructor name (maybeSubType subs sst)
+resolveTypeAnno' subs (TAST.ELit lit sst) = TAST.ELit lit (maybeSubType subs sst)
+resolveTypeAnno' subs (TAST.ELambda params body sst) = TAST.ELambda params (resolveTypeAnno' subs body) (maybeSubType subs sst)
+resolveTypeAnno' subs (TAST.EApp fun args sst) =
+  TAST.EApp (resolveTypeAnno' subs fun) (map (resolveTypeAnno' subs) args) (maybeSubType subs sst)
+resolveTypeAnno' subs (TAST.ECase subj branches sst) =
+  TAST.ECase
+    (resolveTypeAnno' subs subj)
+    (map (bimap (resolvePatternTypeAnno subs) (resolveTypeAnno' subs)) branches)
+    (maybeSubType subs sst)
+resolveTypeAnno' subs (TAST.EBinary op left right sst) =
+  TAST.EBinary
+    op
+    (resolveTypeAnno' subs left)
+    (resolveTypeAnno' subs right)
+    (maybeSubType subs sst)
+resolveTypeAnno' subs (TAST.ERecord fieldSpec sst) = TAST.ERecord (map (second (resolveTypeAnno' subs)) fieldSpec) (maybeSubType subs sst)
+resolveTypeAnno' subs (TAST.EList elems sst) = TAST.EList (map (resolveTypeAnno' subs) elems) (maybeSubType subs sst)
+
+resolvePatternTypeAnno :: Subst -> TAST.Pattern -> TAST.Pattern
+resolvePatternTypeAnno subs (TAST.PVar name sst) = TAST.PVar name (maybeSubType subs sst)
+resolvePatternTypeAnno subs (TAST.PDiscard sst) = TAST.PDiscard (maybeSubType subs sst)
+resolvePatternTypeAnno subs (TAST.PConstructor name params sst) = TAST.PConstructor name (map (resolvePatternTypeAnno subs) params) (maybeSubType subs sst)
+resolvePatternTypeAnno subs (TAST.PRecord fieldSpec sst) = TAST.PRecord (map (second (resolvePatternTypeAnno subs)) fieldSpec) (maybeSubType subs sst)
+resolvePatternTypeAnno subs (TAST.PList elems sst) = TAST.PList (map (resolvePatternTypeAnno subs) elems) (maybeSubType subs sst)
+resolvePatternTypeAnno subs (TAST.PLiteral lit sst) = TAST.PLiteral lit (maybeSubType subs sst)
+
+maybeSubType :: Subst -> TAST.SourceSpanType -> TAST.SourceSpanType
+maybeSubType subs sst = sst {TAST._type = foldl (flip applySubst) (TAST._type sst) (Map.toList subs)}
