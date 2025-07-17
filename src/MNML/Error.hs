@@ -41,6 +41,7 @@ data ParseError
 data ConstrainError
   = UnknownConstructor QualifiedConstructorReference SAST.SourceSpan
   | UnknownType QualifiedTypeReference SAST.SourceSpan
+  | UnknownValue QualifiedValueReference SAST.SourceSpan
   deriving (Eq, Show)
 
 data UnificationError

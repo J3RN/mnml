@@ -20,6 +20,11 @@ import           MNML.Error           (Error (UnificationError), Fallible,
                                        UnificationError (..))
 import qualified MNML.Type            as T
 
+-- Some helpful aliases
+type Expr = TAST.Expr TAST.SourceSpanType
+type Pattern = TAST.Pattern TAST.SourceSpanType
+type Literal = TAST.Literal TAST.SourceSpanType
+
 -- Really, Subst is a mapping of type *variables* to types (variables or otherwise)
 type Subst = Map T.Type T.Type
 
@@ -180,7 +185,7 @@ unify (batch, cs) = do
 resolveTypeAnno :: Subst -> TAST.ValueDef -> TAST.ValueDef
 resolveTypeAnno subs (TAST.ValueDef expr spanA) = TAST.ValueDef (resolveTypeAnno' subs expr) spanA
 
-resolveTypeAnno' :: Subst -> TAST.Expr -> TAST.Expr
+resolveTypeAnno' :: Subst -> Expr -> Expr
 resolveTypeAnno' subs (TAST.EVar name sst) = TAST.EVar name (maybeSubType subs sst)
 resolveTypeAnno' subs (TAST.EConstructor name sst) = TAST.EConstructor name (maybeSubType subs sst)
 resolveTypeAnno' subs (TAST.ELit lit sst) = TAST.ELit lit (maybeSubType subs sst)
@@ -201,7 +206,7 @@ resolveTypeAnno' subs (TAST.EBinary op left right sst) =
 resolveTypeAnno' subs (TAST.ERecord fieldSpec sst) = TAST.ERecord (map (second (resolveTypeAnno' subs)) fieldSpec) (maybeSubType subs sst)
 resolveTypeAnno' subs (TAST.EList elems sst) = TAST.EList (map (resolveTypeAnno' subs) elems) (maybeSubType subs sst)
 
-resolvePatternTypeAnno :: Subst -> TAST.Pattern -> TAST.Pattern
+resolvePatternTypeAnno :: Subst -> Pattern -> Pattern
 resolvePatternTypeAnno subs (TAST.PVar name sst) = TAST.PVar name (maybeSubType subs sst)
 resolvePatternTypeAnno subs (TAST.PDiscard sst) = TAST.PDiscard (maybeSubType subs sst)
 resolvePatternTypeAnno subs (TAST.PConstructor name params sst) = TAST.PConstructor name (map (resolvePatternTypeAnno subs) params) (maybeSubType subs sst)

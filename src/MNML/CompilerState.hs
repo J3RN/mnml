@@ -23,7 +23,7 @@ type Identifier = String
 data CompilerState
   = CompilerState
       { _valueNames       :: Map QualifiedValueReference [Identifier]
-      , _valueDefinitions :: Map Identifier TAST.Expr
+      , _valueDefinitions :: Map Identifier (TAST.Expr T.Type)
       , _typeNames        :: Map QualifiedTypeReference [Identifier]
       , _typeDefinitions  :: Map Identifier T.Type
       , _nextTypeId       :: T.VarId
@@ -56,7 +56,7 @@ lookupType cs qvr = do
     (tId:_) -> _typeDefinitions cs !? tId
 
 -- Lookup a value by name
-lookupVal :: CompilerState -> QualifiedValueReference -> Maybe TAST.Expr
+lookupVal :: CompilerState -> QualifiedValueReference -> Maybe (TAST.Expr T.Type)
 lookupVal cs qvr = do
   vIds <- _valueNames cs !? qvr
   case vIds of

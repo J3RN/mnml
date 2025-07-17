@@ -12,12 +12,11 @@ import           Data.Map             (Map, (!?))
 import qualified Data.Map             as Map
 import qualified Data.Set             as Set
 import           Data.Text            (Text)
-import qualified Data.Text            as Text
 import           Lens.Micro           (Lens', lens, over, set)
 import           Lens.Micro.Extras    (view)
 import           MNML.AST.Span        (spanOf)
 import qualified MNML.AST.Span        as SAST
-import           MNML.AST.Type        (typeOf)
+import           MNML.AST.Type        (Annotated (..), typeOf)
 import qualified MNML.AST.Type        as TAST
 import           MNML.Base            (ModName, QualifiedConstructorReference,
                                        QualifiedTypeReference,
@@ -32,18 +31,27 @@ import qualified MNML.Type            as T
 -- Local vars, e.g. "x is Int"
 type Bindings = Map ValName T.Type
 
--- "We created a type for 'doThing', but we should find constraints later."
-type PendingType = (QualifiedValueReference, T.Type, SAST.SourceSpan)
+-- We created a type for "Thing", we should find its real type later
+type TempType = (QualifiedTypeReference, T.Type, SAST.SourceSpan)
+
+-- "We created a type for 'doThing', we should find its constraints later."
+type TempValueType = (QualifiedValueReference, T.Type, SAST.SourceSpan)
+
+-- Some helpful aliases
+type Expr = TAST.Expr TAST.SourceSpanType
+type Pattern = TAST.Pattern TAST.SourceSpanType
+type Literal = TAST.Literal TAST.SourceSpanType
 
 data ConstrainEnv
   = ConstrainEnv
-      { _batch        :: TAST.Batch
-      , _bindings     :: Bindings
-      , _constraints' :: [C.Constraint]
-      , _definitions  :: [SAST.Definition]
-      , _errors       :: [ConstrainError]
-      , _module       :: ModName
-      , _pendingTypes :: [PendingType]
+      { _batch               :: TAST.Batch
+      , _bindings            :: Bindings
+      , _constraints'        :: [C.Constraint]
+      , _definitions         :: [SAST.Definition]
+      , _errors              :: [ConstrainError]
+      , _module              :: ModName
+      , _temporaryTypes      :: [TempType]
+      , _temporaryValueTypes :: [TempValueType]
       }
 
 batch :: Lens' ConstrainEnv TAST.Batch
@@ -58,19 +66,23 @@ constraints = lens _constraints' (\ce cs -> ce {_constraints' = cs})
 errors :: Lens' ConstrainEnv [ConstrainError]
 errors = lens _errors (\ce errs -> ce { _errors = errs } )
 
-pendingTypes :: Lens' ConstrainEnv [PendingType]
-pendingTypes = lens _pendingTypes (\ce pt -> ce {_pendingTypes = pt})
+temporaryTypes :: Lens' ConstrainEnv [TempType]
+temporaryTypes = lens _temporaryTypes (\ce tt -> ce {_temporaryTypes = tt})
+
+temporaryValueTypes :: Lens' ConstrainEnv [TempValueType]
+temporaryValueTypes = lens _temporaryValueTypes (\ce tvt -> ce {_temporaryValueTypes = tvt})
 
 initialEnv :: ModName -> SAST.Batch -> ConstrainEnv
 initialEnv modu defs  =
   ConstrainEnv
-    { _batch = TAST.Batch { _typeDefs = Map.empty, _typeAliasDefs = Map.empty, _valueDefs = Map.empty}
+    { _batch = TAST.Batch { _typeDefs = Map.empty, _valueDefs = Map.empty}
     , _bindings = Map.empty
     , _constraints' = []
     , _definitions = defs
     , _errors = []
     , _module = modu
-    , _pendingTypes = []
+    , _temporaryTypes = []
+    , _temporaryValueTypes = []
     }
 
 type Constrain a = StateT ConstrainEnv (State CompilerState) a
@@ -94,7 +106,7 @@ opToOp SAST.And    = TAST.And
 opToOp SAST.Or     = TAST.Or
 opToOp SAST.Equals = TAST.Equals
 
-litToLit :: SAST.Literal -> Constrain TAST.Literal
+litToLit :: SAST.Literal -> Constrain Literal
 litToLit (SAST.LInt int s)      = TAST.LInt int . spanToSpanType s <$> freshTypeVar "num" [T.Numeric]
 litToLit (SAST.LFloat double s) = return (TAST.LFloat double (spanToSpanType s T.Float))
 litToLit (SAST.LChar char s)    = return (TAST.LChar char (spanToSpanType s T.Char))
@@ -109,29 +121,35 @@ giveUp err name = addError err >> freshTypeVar name []
 getBinding :: Text -> ConstrainEnv -> Maybe T.Type
 getBinding name = (!? name) . view bindings
 
+typeDefs :: Lens' ConstrainEnv (Map QualifiedTypeReference TAST.TypeDef)
+typeDefs =  batch . TAST.typeDefs
 
-valueDefs :: ConstrainEnv -> Map QualifiedValueReference TAST.ValueDef
-valueDefs = TAST._valueDefs . view batch
+valueDefs :: Lens' ConstrainEnv (Map QualifiedValueReference TAST.ValueDef)
+valueDefs = batch . TAST.valueDefs
+
+getBatchType :: QualifiedTypeReference -> ConstrainEnv -> Maybe T.Type
+getBatchType qtr env = (\(TAST.TypeDef t _) -> t) <$> Map.lookup qtr (view typeDefs env)
 
 getBatchValueType :: QualifiedValueReference -> ConstrainEnv -> Maybe T.Type
-getBatchValueType qvr env = (\(TAST.ValueDef expr _) -> typeOf expr) <$> Map.lookup qvr (valueDefs env)
+getBatchValueType qvr env = (\(TAST.ValueDef expr _) -> typeOf expr) <$> Map.lookup qvr (view valueDefs env)
 
 -- The real meat
 
-constrain' :: SAST.Expr -> Constrain (TAST.Expr, [C.Constraint])
+constrain' :: SAST.Expr -> Constrain (Expr, [C.Constraint])
 constrain' (SAST.EVar name spanA) = do
-  -- TODO: Assumes local (same module); need to update to support foreign references
-  modu <- gets _module
-  lookupRes <- gets (liftA2 (<|>) (getBinding name) (getBatchValueType (modu, name)))
+  lookupRes <- gets (getBinding name)
   case lookupRes of
     -- If it's bound, we "know" its type
     Just t -> return (TAST.EVar name (spanToSpanType spanA t), [])
     -- Otherwise, this must be a reference.  Give it a type var and add it to the queue for later.
     Nothing -> do
+      -- TODO: Assumes local (same module); need to update to support foreign references
+      modu <- gets _module
       newTVar <- freshTypeVar name []
-      modify (over pendingTypes (((modu, name), newTVar, spanA) :))
+      modify (over temporaryValueTypes (((modu, name), newTVar, spanA) :))
       return (TAST.EVar name (spanToSpanType spanA newTVar), [])
 constrain' (SAST.EConstructor name spanA) = do
+  -- TODO: Assumes local (same module); need to update to support foreign references
   modu <- gets _module
   let qvr = (modu, name)
   expectedTypeRes <- constructorType qvr
@@ -220,7 +238,7 @@ constrain' (SAST.EList elems spanA) = do
     )
 
 -- Create constraints based on patterns
-constrainPattern :: SAST.Pattern -> Constrain (TAST.Pattern, [C.Constraint])
+constrainPattern :: SAST.Pattern -> Constrain (Pattern, [C.Constraint])
 constrainPattern (SAST.PVar t spanA) = do
   varType <- declareVar t
   return (TAST.PVar t (spanToSpanType spanA varType), [])
@@ -251,10 +269,7 @@ constrainPattern (SAST.PRecord fieldSpec spanA) = do
     , C.CEqual spanA retType partialRecordType : fieldConstraints
     )
   where
-    foldRecord ::
-      ([(Text, TAST.Pattern)], [C.Constraint]) ->
-      (Text, SAST.Pattern) ->
-      Constrain ([(Text, TAST.Pattern)], [C.Constraint])
+    foldRecord :: ([(Text, Pattern)], [C.Constraint]) -> (Text, SAST.Pattern) -> Constrain ([(Text, Pattern)], [C.Constraint])
     foldRecord (fields, fieldCons) (fieldName, fieldPattern) = do
       (field', fieldSubCons) <- constrainPattern fieldPattern
       return ((fieldName, field') : fields, fieldSubCons ++ fieldCons)
@@ -287,68 +302,49 @@ declareVar name = do
   modify (over bindings (Map.insert name newVarType))
   return newVarType
 
-constructorType :: QualifiedConstructorReference -> Constrain (Maybe T.Type)
-constructorType qvr = do
-  -- Step 1: See if it's in the data being loaded
-  -- *Because we analyze all type defs before analyzing values, this should be fine for any value lookups*
-  -- A constructor is a value (function that converts args to a ADT)
-  lookupRes <- gets (Map.lookup qvr . TAST._valueDefs . view batch)
-  case lookupRes of
-    Just (TAST.ValueDef expr _) -> return (Just (typeOf expr))
-    -- Step 2: See if it's in the store
-    Nothing                     -> (typeOf <$>) <$> lift (gets (`lookupVal` qvr))
-
-typify :: SAST.Type -> Constrain (Maybe T.Type)
-typify (SAST.TInt _) = return (Just T.Int)
-typify (SAST.TFloat _) = return (Just T.Float)
-typify (SAST.TChar _) = return (Just T.Char)
-typify (SAST.TString _) = return (Just T.String)
-typify (SAST.TNamedType name _) = do
-  modName <- gets _module
-  -- TODO: This is a reference, put it on the stack
-  moduleNamedType (modName, name)
-typify (SAST.TList t _) = (T.List <$>) <$> typify t
+typify :: SAST.Type -> Constrain T.Type
+typify (SAST.TInt _) = return T.Int
+typify (SAST.TFloat _) = return T.Float
+typify (SAST.TChar _) = return T.Char
+typify (SAST.TString _) = return T.String
+typify (SAST.TNamedType name spanA) = do
+  qtr <- gets ((, name) . _module)
+  maybeT <- namedType qtr
+  case maybeT of
+    (Just t) -> return t
+    Nothing  -> do
+      -- Create a temp type; put it on the stack to be potentially found later
+      t <- freshTypeVar name []
+      modify (over temporaryTypes ((qtr, t, spanA):))
+      return t
+typify (SAST.TList t _) = T.List <$> typify t
 typify (SAST.TFun argTypes resType _) = do
-  maybeArgTypes <- mapM typify argTypes
-  maybeResType <- typify resType
-  return (T.Fun <$> sequence maybeArgTypes <*> maybeResType)
+  T.Fun <$> mapM typify argTypes <*> typify resType
 -- There might be a more elegant way, not sure
 typify (SAST.TRecord fields _) = do
-  fieldTypes <- mapM (\(fieldName, t) -> ((fieldName,) <$>) <$> typify t) fields
-  return (T.Record . Map.fromList <$> sequence fieldTypes)
-typify (SAST.TVar name _) = Just <$> freshTypeVar name []
+  fieldTypes <- mapM (\(fieldName, t) -> (fieldName,) <$> typify t) fields
+  return (T.Record (Map.fromList fieldTypes))
+-- TODO: We'll probably need the idea of a type binding
+typify (SAST.TVar name _) = freshTypeVar name []
 
-moduleNamedType :: QualifiedTypeReference -> Constrain (Maybe T.Type)
-moduleNamedType qvr = do
-  -- Step 1: See if it's in the data being loaded
-  -- TODO
-  -- Step 2: See if it's in the store
-  lift (gets (`lookupType` qvr))
-
--- TODO: We need pending types in the case of a circular dependence, e.g. (haskell syntax)
--- data Foo = Foo Bar
--- data Bar = Bar Foo
-convertConstructor :: SAST.Constructor -> Constrain TAST.Constructor
-convertConstructor (SAST.Constructor cName cArgs spanA) = do
-  newArgs <- mapM convertType cArgs
-  return (TAST.Constructor cName newArgs spanA)
-  where convertType :: SAST.Type -> Constrain (T.Type, SAST.SourceSpan)
-        convertType sast = do
-          maybeT <- typify sast
-          t <- case maybeT of
-            Just t -> pure t
-            Nothing -> do
-              modName <- gets _module
-              giveUp (UnknownType (modName, nameOf sast) (spanOf sast)) (Text.pack (show sast))
-          return (t, spanOf sast)
-        nameOf :: SAST.Type -> Text
-        nameOf (SAST.TNamedType name _) = name
-        -- Really, this clause should never be hit
-        nameOf sast                     = Text.pack (show sast)
+-- Defines constructor as a value
+-- A constructor is a value whose definition is EConstructor and whose type is T.Fun
+defineConstructor :: T.Type -> SAST.Constructor -> Constrain ()
+defineConstructor t (SAST.Constructor cName cArgs spanA) = do
+  -- TODO: Double check this module fetch
+  modName <- gets _module
+  newArgs <- mapM typify cArgs
+  let cType = T.Fun newArgs t
+      cValDef = TAST.ValueDef (TAST.EConstructor cName (spanToSpanType spanA cType)) spanA
+  modify (over valueDefs (Map.insert (modName, cName) cValDef))
 
 constrain :: SAST.Batch -> Fallible (TAST.Batch, [C.Constraint])
 constrain defs = do
-  res <- lift (execStateT (extractTypeDefs >> extractTypeAliases >> extractValueDefs) (initialEnv [] defs))
+  res <- lift (execStateT (extractTypeDefs
+                           >> extractTypeAliases
+                           >> extractValueDefs
+                           >> reconcileTempTypes
+                           >> reconcileTempValueTypes) (initialEnv [] defs))
   case res of
     env@(ConstrainEnv {_errors = []}) ->
       return (_batch env, _constraints' env)
@@ -360,18 +356,17 @@ extractTypeDefs :: Constrain ()
 extractTypeDefs = extractDefinitions typeDef
   where
     typeDef (SAST.TypeDef qtr constructors spanA) = do
-      constructors' <- mapM convertConstructor constructors
-      modify (over (batch . TAST.typeDefs) (Map.insert qtr (TAST.TypeDef constructors' spanA)))
+      t <- freshTypeVar (snd qtr) []
+      mapM_ (defineConstructor t) constructors
+      modify (over typeDefs (Map.insert qtr (TAST.TypeDef t spanA)))
     typeDef _ = return ()
 
 extractTypeAliases :: Constrain ()
 extractTypeAliases = extractDefinitions typeAliasDef
   where
     typeAliasDef (SAST.TypeAliasDef qtr sastT spanA) = do
-      maybeType <- typify sastT
-      case maybeType of
-        Just t  -> modify (over (batch . TAST.typeAliasDefs) (Map.insert qtr (TAST.TypeAliasDef t spanA)))
-        Nothing -> addError (UnknownType qtr spanA)
+      t <- typify sastT
+      modify (over typeDefs (Map.insert qtr (TAST.TypeDef t spanA)))
     typeAliasDef _ = return ()
 
 extractValueDefs :: Constrain ()
@@ -379,8 +374,71 @@ extractValueDefs = extractDefinitions valueDef
   where
     valueDef (SAST.ValueDef qvr expr spanA) = do
       (typedExpr, cs) <- constrain' expr
-      modify (over (batch . TAST.valueDefs) (Map.insert qvr (TAST.ValueDef typedExpr spanA)) . over constraints (++ cs))
+      modify (over valueDefs (Map.insert qvr (TAST.ValueDef typedExpr spanA)) . over constraints (++ cs))
     valueDef _ = return ()
+
+reconcileTempTypes :: Constrain ()
+reconcileTempTypes = do
+  todos <- gets (view temporaryTypes)
+  mapM_ reconcilePendingType todos
+  where reconcilePendingType :: TempType -> Constrain ()
+        reconcilePendingType (qtr, tempT, spanA) = do
+          maybeT <- namedType qtr
+          case maybeT of
+            Just realT -> replaceType (tempT, realT)
+            Nothing    -> addError (UnknownType qtr spanA)
+
+type Replacement = (T.Type, T.Type)
+
+replaceType :: Replacement -> Constrain ()
+replaceType rep = modify (over typeDefs (Map.map (replaceTypeInTypeDef rep))
+                         . over valueDefs (Map.map (replaceTypeInValueDef rep)))
+
+replaceTypeInTypeDef :: Replacement -> TAST.TypeDef -> TAST.TypeDef
+replaceTypeInTypeDef rep (TAST.TypeDef t spanA) = TAST.TypeDef (replaceTypeInType rep t) spanA
+
+-- I think there's probably a cleverer way to write this, but 🤷
+replaceTypeInType :: Replacement -> T.Type -> T.Type
+replaceTypeInType _ T.Int                     = T.Int
+replaceTypeInType _ T.Float                   = T.Float
+replaceTypeInType _ T.Char                    = T.Char
+replaceTypeInType _ T.String                  = T.String
+replaceTypeInType rep (T.List t)              = T.List (replaceTypeInType rep t)
+replaceTypeInType rep (T.Fun argTs retT)      = T.Fun (map (replaceTypeInType rep) argTs) (replaceTypeInType rep retT)
+replaceTypeInType rep (T.Record fieldSpec)    = T.Record (Map.map (replaceTypeInType rep) fieldSpec)
+replaceTypeInType _ t@(T.AlgebraicType _)     = t
+replaceTypeInType rep (T.TypeAlias alias t)   = T.TypeAlias alias (replaceTypeInType rep t)
+replaceTypeInType (tempT, realT) t@(T.Var {}) = if t == tempT then realT else t
+replaceTypeInType rep (T.PartialRecord fieldSpec varId) = T.PartialRecord (Map.map (replaceTypeInType rep) fieldSpec) varId
+
+replaceTypeInValueDef :: Replacement -> TAST.ValueDef -> TAST.ValueDef
+replaceTypeInValueDef rep (TAST.ValueDef expr spanA) = TAST.ValueDef (replaceTypeInExpr rep expr) spanA
+
+replaceTypeInExpr :: Replacement -> Expr -> Expr
+replaceTypeInExpr rep expr = replaceTypeInSourceSpanType <$> expr
+  where replaceTypeInSourceSpanType :: TAST.SourceSpanType -> TAST.SourceSpanType
+        replaceTypeInSourceSpanType sst = TAST.setType sst (replaceTypeInType rep (typeOf sst))
+
+reconcileTempValueTypes :: Constrain ()
+reconcileTempValueTypes = do
+  todos <- gets (view temporaryValueTypes)
+  mapM_ reconcilePendingValue todos
+  where reconcilePendingValue :: TempValueType -> Constrain ()
+        reconcilePendingValue (qvr, tempT, spanA) = do
+          maybeT <- valueType qvr
+          case maybeT of
+            Just realT -> modify (over constraints (C.CEqual spanA tempT realT :))
+            Nothing    -> addError (UnknownValue qvr spanA)
 
 extractDefinitions :: (SAST.Definition -> Constrain ()) -> Constrain ()
 extractDefinitions handler = gets _definitions >>= mapM_ handler
+
+namedType :: QualifiedTypeReference -> Constrain (Maybe T.Type)
+namedType qtr = liftA2 (<|>) (gets (getBatchType qtr)) (lift (gets (`lookupType` qtr)))
+
+-- A constructor is a value (function that converts args to a ADT)
+constructorType :: QualifiedConstructorReference -> Constrain (Maybe T.Type)
+constructorType = valueType
+
+valueType :: QualifiedValueReference -> Constrain (Maybe T.Type)
+valueType qvr = liftA2 (<|>) (gets (getBatchValueType qvr)) (lift (gets ((getAnno <$>) <$> (`lookupVal` qvr))))

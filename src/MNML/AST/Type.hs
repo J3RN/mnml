@@ -1,59 +1,50 @@
 module MNML.AST.Type
-    ( Batch (..)
+    ( Annotated (..)
+    , Batch (..)
     , Constructor (..)
     , Expr (..)
     , Literal (..)
     , Operator (..)
     , Pattern (..)
     , SourceSpanType (..)
-    , Type (..)
-    , TypeAliasDef (..)
     , TypeDef (..)
     , Typed (..)
     , ValueDef (..)
-    , sourceSpanTypeToSourceSpan
-    , typeAliasDefs
     , typeDefs
     , valueDefs
     ) where
 
-import           Data.Map      (Map)
-import           Data.Text     (Text)
-import           Lens.Micro    (Lens', lens)
-import           MNML.AST.Span (SourceSpan (..), Spanned (..))
-import           MNML.Base     (QualifiedTypeReference, QualifiedValueReference)
-import qualified MNML.Type     as T
-import           Text.Parsec   (SourcePos)
+import           Data.Bifunctor (bimap, second)
+import           Data.Map       (Map)
+import           Data.Text      (Text)
+import           Lens.Micro     (Lens', lens)
+import           MNML.AST.Span  (SourceSpan (..), Spanned (..))
+import           MNML.Base      (QualifiedTypeReference,
+                                 QualifiedValueReference)
+import qualified MNML.Type      as T
+import           Text.Parsec    (SourcePos)
 
 data Batch
   = Batch
-      { _typeDefs      :: Map QualifiedTypeReference TypeDef
-      , _typeAliasDefs :: Map QualifiedTypeReference TypeAliasDef
-      , _valueDefs     :: Map QualifiedValueReference ValueDef
+      { _typeDefs  :: Map QualifiedTypeReference TypeDef
+      , _valueDefs :: Map QualifiedValueReference ValueDef
       }
   deriving (Eq, Show)
 
 typeDefs :: Lens' Batch (Map QualifiedTypeReference TypeDef)
 typeDefs = lens _typeDefs (\ce td -> ce {_typeDefs = td})
 
-typeAliasDefs :: Lens' Batch (Map QualifiedTypeReference TypeAliasDef)
-typeAliasDefs = lens _typeAliasDefs (\ce ta -> ce {_typeAliasDefs = ta})
-
 valueDefs :: Lens' Batch (Map QualifiedValueReference ValueDef)
 valueDefs = lens _valueDefs (\ce te -> ce {_valueDefs = te})
 
 data TypeDef
-  = TypeDef [Constructor] SourceSpan
-  deriving (Eq, Show)
-
-data TypeAliasDef
-  = TypeAliasDef T.Type SourceSpan
+  = TypeDef T.Type SourceSpan
   deriving (Eq, Show)
 
 -- The span refers to the entire span of the definition whereas the Expr's span
 -- refers only to the RHS
 data ValueDef
-  = ValueDef Expr SourceSpan
+  = ValueDef (Expr SourceSpanType) SourceSpan
   deriving (Eq, Show)
 
 -- e.g. Just Int; Name, TypeArgs, Span
@@ -69,121 +60,144 @@ data SourceSpanType
       }
   deriving (Eq, Show)
 
-data Expr
-  = EVar Text SourceSpanType
-  | EConstructor Text SourceSpanType -- Foo
-  | ELit Literal SourceSpanType
-  | ELambda [Text] Expr SourceSpanType -- ["x", "y"] -> EBinary (EVar "x") Add (EVar "y")
-  | EApp Expr [Expr] SourceSpanType -- (EVar "fun") [(EVar "x"), (EVar "y")]
-  | ECase Expr [(Pattern, Expr)] SourceSpanType
-  | EBinary Operator Expr Expr SourceSpanType
-  | ERecord [(Text, Expr)] SourceSpanType
-  | EList [Expr] SourceSpanType
+data Expr anno
+  = EVar Text anno
+  | EConstructor Text anno -- Foo
+  | ELit (Literal anno) anno
+  | ELambda [Text] (Expr anno) anno -- ["x", "y"] -> EBinary (EVar "x") Add (EVar "y")
+  | EApp (Expr anno) [Expr anno] anno -- (EVar "fun") [(EVar "x"), (EVar "y")]
+  | ECase (Expr anno) [(Pattern anno, Expr anno)] anno
+  | EBinary Operator (Expr anno) (Expr anno) anno
+  | ERecord [(Text, Expr anno)] anno
+  | EList [Expr anno] anno
   deriving (Eq, Show)
 
-data Literal
-  = LInt Integer SourceSpanType
-  | LFloat Double SourceSpanType
-  | LChar Char SourceSpanType
-  | LString Text SourceSpanType
+data Literal anno
+  = LInt Integer anno
+  | LFloat Double anno
+  | LChar Char anno
+  | LString Text anno
   deriving (Eq, Show)
 
-data Pattern
-  = PVar Text SourceSpanType
-  | PDiscard SourceSpanType -- _
-  | PConstructor Text [Pattern] SourceSpanType
-  | PRecord [(Text, Pattern)] SourceSpanType
-  | PList [Pattern] SourceSpanType
-  | PLiteral Literal SourceSpanType
+data Pattern anno
+  = PVar Text anno
+  | PDiscard anno -- _
+  | PConstructor Text [Pattern anno] anno
+  | PRecord [(Text, Pattern anno)] anno
+  | PList [Pattern anno] anno
+  | PLiteral (Literal anno) anno
   deriving (Eq, Show)
 
 data Operator = Add | Sub | Mul | Div | And | Or | Equals
   deriving (Eq, Show)
 
-data Type
-  = TInt SourceSpanType
-  | TFloat SourceSpanType
-  | TChar SourceSpanType
-  | TString SourceSpanType
-  | TList Type SourceSpanType -- TInt
-  | TFun [Type] Type SourceSpanType -- [TInt, TInt] -> TInt
-  | TRecord [(Text, Type)] SourceSpanType -- [("name", TString), ...]
-  | TVar Text SourceSpanType -- "a"
-  deriving (Eq, Show)
-
-sourceSpanTypeToSourceSpan :: SourceSpanType -> SourceSpan
-sourceSpanTypeToSourceSpan (SourceSpanType {_spanStart = s, _spanEnd = e}) = SourceSpan {_spanStart = s, _spanEnd = e}
-
 class Typed a where
   typeOf :: a -> T.Type
+  setType :: a -> T.Type -> a
 
-instance Typed Expr where
-  typeOf (EVar _ (SourceSpanType {_type = t}))         = t
-  typeOf (EConstructor _ (SourceSpanType {_type = t})) = t
-  typeOf (ELit _ (SourceSpanType {_type = t}))         = t
-  typeOf (ELambda _ _ (SourceSpanType {_type = t}))    = t
-  typeOf (EApp _ _ (SourceSpanType {_type = t}))       = t
-  typeOf (ECase _ _ (SourceSpanType {_type = t}))      = t
-  typeOf (EBinary _ _ _ (SourceSpanType {_type = t}))  = t
-  typeOf (ERecord _ (SourceSpanType {_type = t}))      = t
-  typeOf (EList _ (SourceSpanType {_type = t}))        = t
+type' :: (Typed a) => Lens' a T.Type
+type' = lens typeOf setType
 
-instance Spanned Expr where
-  spanOf (EVar _ s)         = sourceSpanTypeToSourceSpan s
-  spanOf (EConstructor _ s) = sourceSpanTypeToSourceSpan s
-  spanOf (ELit _ s)         = sourceSpanTypeToSourceSpan s
-  spanOf (ELambda _ _ s)    = sourceSpanTypeToSourceSpan s
-  spanOf (EApp _ _ s)       = sourceSpanTypeToSourceSpan s
-  spanOf (ECase _ _ s)      = sourceSpanTypeToSourceSpan s
-  spanOf (EBinary _ _ _ s)  = sourceSpanTypeToSourceSpan s
-  spanOf (ERecord _ s)      = sourceSpanTypeToSourceSpan s
-  spanOf (EList _ s)        = sourceSpanTypeToSourceSpan s
+class Annotated a where
+  getAnno :: a b -> b
+  setAnno :: a b -> b -> a b
 
-instance Typed Literal where
-  typeOf (LInt _ (SourceSpanType {_type = t}))    = t
-  typeOf (LFloat _ (SourceSpanType {_type = t}))  = t
-  typeOf (LChar _ (SourceSpanType {_type = t}))   = t
-  typeOf (LString _ (SourceSpanType {_type = t})) = t
+instance Typed SourceSpanType where
+  typeOf = _type
+  setType spanA t = spanA {_type = t}
 
-instance Spanned Literal where
-  spanOf (LInt _ s)    = sourceSpanTypeToSourceSpan s
-  spanOf (LFloat _ s)  = sourceSpanTypeToSourceSpan s
-  spanOf (LChar _ s)   = sourceSpanTypeToSourceSpan s
-  spanOf (LString _ s) = sourceSpanTypeToSourceSpan s
+instance Spanned SourceSpanType where
+  spanOf (SourceSpanType {_spanStart = start, _spanEnd = end}) = (SourceSpan {_spanStart = start, _spanEnd = end})
 
-instance Typed Pattern where
-  typeOf (PVar _ (SourceSpanType {_type = t}))           = t
-  typeOf (PDiscard (SourceSpanType {_type = t}))         = t
-  typeOf (PConstructor _ _ (SourceSpanType {_type = t})) = t
-  typeOf (PRecord _ (SourceSpanType {_type = t}))        = t
-  typeOf (PList _ (SourceSpanType {_type = t}))          = t
-  typeOf (PLiteral _ (SourceSpanType {_type = t}))       = t
+instance Functor Expr where
+  fmap f (EVar name spanA)           = EVar name (f spanA)
+  fmap f (EConstructor name spanA)   = EConstructor name (f spanA)
+  fmap f (ELit lit spanA)            = ELit (fmap f lit) (f spanA)
+  fmap f (ELambda args body spanA)   = ELambda args (fmap f body) (f spanA)
+  fmap f (EApp applicant args spanA) = EApp (fmap f applicant) (map (fmap f) args) (f spanA)
+  fmap f (ECase subject arms spanA)  = ECase (fmap f subject) (map (bimap (fmap f) (fmap f)) arms) (f spanA)
+  fmap f (EBinary op lhs rhs spanA)  = EBinary op (fmap f lhs) (fmap f rhs) (f spanA)
+  fmap f (ERecord fieldSpec spanA)   = ERecord (map (second (fmap f)) fieldSpec) (f spanA)
+  fmap f (EList members spanA)       = EList (map (fmap f) members) (f spanA)
 
-instance Spanned Pattern where
-  spanOf (PVar _ s)           = sourceSpanTypeToSourceSpan s
-  spanOf (PDiscard s)         = sourceSpanTypeToSourceSpan s
-  spanOf (PConstructor _ _ s) = sourceSpanTypeToSourceSpan s
-  spanOf (PRecord _ s)        = sourceSpanTypeToSourceSpan s
-  spanOf (PList _ s)          = sourceSpanTypeToSourceSpan s
-  spanOf (PLiteral _ s)       = sourceSpanTypeToSourceSpan s
+instance Functor Literal where
+  fmap f (LInt i spanA)      = LInt i (f spanA)
+  fmap f (LFloat float anno) = LFloat float (f anno)
+  fmap f (LChar c anno)      = LChar c (f anno)
+  fmap f (LString s anno)    = LString s (f anno)
 
--- Haha
-instance Typed Type where
-  typeOf (TInt (SourceSpanType {_type = t}))      = t
-  typeOf (TFloat (SourceSpanType {_type = t}))    = t
-  typeOf (TChar (SourceSpanType {_type = t}))     = t
-  typeOf (TString (SourceSpanType {_type = t}))   = t
-  typeOf (TList _ (SourceSpanType {_type = t}))   = t
-  typeOf (TFun _ _ (SourceSpanType {_type = t}))  = t
-  typeOf (TRecord _ (SourceSpanType {_type = t})) = t
-  typeOf (TVar _ (SourceSpanType {_type = t}))    = t
+instance Functor Pattern where
+  fmap f (PVar name anno) = PVar name (f anno)
+  fmap f (PDiscard anno)  = PDiscard (f anno)
+  fmap f (PConstructor name argPats anno) = PConstructor name (map (fmap f) argPats) (f anno)
+  fmap f (PRecord fieldSpec anno) = PRecord (map (second (fmap f)) fieldSpec) (f anno)
+  fmap f (PList members anno) = PList (map (fmap f) members) (f anno)
+  fmap f (PLiteral lit anno)= PLiteral (fmap f lit) (f anno)
 
-instance Spanned Type where
-  spanOf (TInt s)      = sourceSpanTypeToSourceSpan s
-  spanOf (TFloat s)    = sourceSpanTypeToSourceSpan s
-  spanOf (TChar s)     = sourceSpanTypeToSourceSpan s
-  spanOf (TString s)   = sourceSpanTypeToSourceSpan s
-  spanOf (TList _ s)   = sourceSpanTypeToSourceSpan s
-  spanOf (TFun _ _ s)  = sourceSpanTypeToSourceSpan s
-  spanOf (TRecord _ s) = sourceSpanTypeToSourceSpan s
-  spanOf (TVar _ s)    = sourceSpanTypeToSourceSpan s
+instance Annotated Expr where
+  getAnno (EVar _ anno)         = anno
+  getAnno (EConstructor _ anno) = anno
+  getAnno (ELit _ anno)         = anno
+  getAnno (ELambda _ _ anno)    = anno
+  getAnno (EApp _ _ anno)       = anno
+  getAnno (ECase _ _ anno)      = anno
+  getAnno (EBinary _ _ _ anno)  = anno
+  getAnno (ERecord _ anno)      = anno
+  getAnno (EList _ anno)        = anno
+
+  setAnno (EVar name _) anno           = EVar name anno
+  setAnno (EConstructor name _) anno   = EConstructor name anno
+  setAnno (ELit lit _) anno            = ELit lit anno
+  setAnno (ELambda args body _) anno   = ELambda args body anno
+  setAnno (EApp applicant args _) anno = EApp applicant args anno
+  setAnno (ECase subject arms _) anno  = ECase subject arms anno
+  setAnno (EBinary op lhs rhs _) anno  = EBinary op lhs rhs anno
+  setAnno (ERecord fieldSpec _) anno   = ERecord fieldSpec anno
+  setAnno (EList members _) anno       = EList members anno
+
+instance (Typed anno) => Typed (Expr anno) where
+  typeOf expr = typeOf (getAnno expr)
+  setType expr t = setAnno expr (setType (getAnno expr) t)
+
+instance (Spanned anno) => Spanned (Expr anno) where
+  spanOf expr = spanOf (getAnno expr)
+
+instance Annotated Literal where
+  getAnno (LInt _ anno)    = anno
+  getAnno (LFloat _ anno)  = anno
+  getAnno (LChar _ anno)   = anno
+  getAnno (LString _ anno) = anno
+
+  setAnno (LInt i _) anno    = LInt i anno
+  setAnno (LFloat f _) anno  = LFloat f anno
+  setAnno (LChar c _) anno   = LChar c anno
+  setAnno (LString s _) anno = LString s anno
+
+instance (Typed anno) => Typed (Literal anno) where
+  typeOf lit = typeOf (getAnno lit)
+  setType lit t = setAnno lit (setType (getAnno lit) t)
+
+instance (Spanned anno) => Spanned (Literal anno) where
+  spanOf lit = spanOf (getAnno lit)
+
+instance Annotated Pattern where
+  getAnno (PVar _ anno)           = anno
+  getAnno (PDiscard anno)         = anno
+  getAnno (PConstructor _ _ anno) = anno
+  getAnno (PRecord _ anno)        = anno
+  getAnno (PList _ anno)          = anno
+  getAnno (PLiteral _ anno)       = anno
+
+  setAnno (PVar name _) anno              = PVar name anno
+  setAnno (PDiscard _) anno               = PDiscard anno
+  setAnno (PConstructor name args _) anno = PConstructor name args anno
+  setAnno (PRecord fieldSpec _) anno      = PRecord fieldSpec anno
+  setAnno (PList members _) anno          = PList members anno
+  setAnno (PLiteral lit _) anno           = PLiteral lit anno
+
+instance (Typed anno) => Typed (Pattern anno) where
+  typeOf pat = typeOf (getAnno pat)
+  setType pat t = setAnno pat (setType (getAnno pat) t)
+
+instance (Spanned anno) => Spanned (Pattern anno) where
+  spanOf pat = spanOf (getAnno pat)

@@ -6,6 +6,7 @@ import           Control.Monad.Except (runExceptT)
 import           Control.Monad.State  (evalState)
 import           Data.Map             ((!?))
 import qualified Data.Map             as Map
+import qualified Data.Set             as Set
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
 import           MNML.AST.Type        as TAST
@@ -14,19 +15,20 @@ import           MNML.Base            (QualifiedTypeReference,
 import           MNML.CompilerState   (emptyState)
 import           MNML.Constrain       (constrain)
 import           MNML.Constraint      (Constraint (..))
+import           MNML.Error           (Error)
 import           MNML.Parse           (parse)
 import qualified MNML.Type            as T
 import           SpecHelpers
 import           Test.Hspec
 
 -- Helper function to parse and constrain in one step
-parseAndConstrain :: Text -> Either Text (TAST.Batch, [Constraint])
+parseAndConstrain :: Text -> Either [Error] (TAST.Batch, [Constraint])
 parseAndConstrain source =
   case evalState (runExceptT (parse source >>= constrain)) emptyState of
-  Left errors  -> Left (Text.pack (show errors))
-  Right result -> Right result
+    Left errors  -> Left errors
+    Right result -> Right result
 
-expectBatch :: HasCallStack => Either Text (TAST.Batch, [Constraint]) -> ((TAST.Batch, [Constraint]) -> Expectation) -> Expectation
+expectBatch :: HasCallStack => Either [Error] (TAST.Batch, [Constraint]) -> ((TAST.Batch, [Constraint]) -> Expectation) -> Expectation
 expectBatch (Left err)   _      = unexpected err
 expectBatch (Right res)  expect = expect res
 
@@ -42,28 +44,26 @@ expectTypeDef batch qvr expect =
     (Just typeDef) -> expect typeDef
     Nothing -> expectationFailure $ "Expected batch to contain type " <> show qvr <> " but it did not"
 
-expectTypeAliasDef :: HasCallStack => TAST.Batch -> QualifiedTypeReference -> (TAST.TypeAliasDef -> Expectation) -> Expectation
-expectTypeAliasDef batch qvr expect =
-  case TAST._typeAliasDefs batch !? qvr of
-    (Just typeAliasDef) -> expect typeAliasDef
-    Nothing -> expectationFailure $ "Expected batch to contain type alias " <> show qvr <> " but it did not"
-
 spec :: Spec
 spec = do
   describe "value definitions" $ do
-    it "constrains simple integer literal" $ do
-      let source = "main = 42"
+    it "constrains float literal" $ do
+      let source = "main = 2.7"
       expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
         expectValue batch ([], "main") $ \case
-          TAST.ValueDef (TAST.ELit (TAST.LInt 42 _) _) _ -> pure ()
+          TAST.ValueDef lit@(TAST.ELit float@(TAST.LFloat 2.7 _) _) _ -> do
+            typeOf lit `shouldBe` T.Float
+            typeOf float `shouldBe` T.Float
           other -> unexpected other
         cs `shouldBe` []
 
-    it "constrains simple string literal" $ do
+    it "constrains string literal" $ do
       let source = "main = \"hello\""
       expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
         expectValue batch ([], "main") $ \case
-          TAST.ValueDef (TAST.ELit (TAST.LString "hello" _) _) _ -> pure ()
+          TAST.ValueDef lit@(TAST.ELit string@(TAST.LString "hello" _) _) _ -> do
+            typeOf lit `shouldBe` T.String
+            typeOf string `shouldBe` T.String
           other -> unexpected other
         cs `shouldBe` []
 
@@ -71,67 +71,140 @@ spec = do
       let source = "main = 5.0 + 3.0"
       expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
         expectValue batch ([], "main") $ \case
-          TAST.ValueDef (TAST.EBinary TAST.Add (TAST.ELit (TAST.LFloat 5.0 _) _) (TAST.ELit (TAST.LFloat 3.0 _) _) _) _ -> pure ()
+          TAST.ValueDef bin@(TAST.EBinary TAST.Add (TAST.ELit (TAST.LFloat 5.0 _) _) (TAST.ELit (TAST.LFloat 3.0 _) _) _) _ -> do
+            case typeOf bin of
+              (T.Var "ret" traits _) -> traits `shouldBe` Set.fromList [T.Numeric]
+              other                  -> unexpected other
+
+            case cs of
+              [CEqual _ lhs@(T.Var "ret" _ _) T.Float, CEqual _ rhs@(T.Var "ret" _ _) T.Float] -> do
+                lhs `shouldBe` typeOf bin
+                rhs `shouldBe` typeOf bin
+              other -> unexpected other
           other -> unexpected other
 
-        case cs of
-          [CEqual _ (T.Var "ret" _ _) T.Float, CEqual _ (T.Var "ret" _ _) T.Float] -> pure ()
+
+    it "constrains local references" $ do
+      let source = Text.unlines ["main = foo", "foo = 5.0"]
+      expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
+        expectValue batch ([], "foo") $ \case
+          TAST.ValueDef (TAST.ELit (TAST.LFloat _ _) _) _ -> pure()
           other -> unexpected other
+
+        expectValue batch ([], "main") $ \case
+          TAST.ValueDef foo@(TAST.EVar "foo" _) _ ->
+            case cs of
+              [CEqual _ fooType@(T.Var "foo" _ _) T.Float] -> fooType `shouldBe` typeOf foo
+              other                                        -> unexpected other
+          other -> unexpected other
+
+
+    -- xit "constrains remote references" $ do
+    --   return ()
 
     it "constrains function application" $ do
-      let source = "main = foo(42)"
+      let source = Text.unlines ["main = foo(42)", "foo = (x) => { x }"]
       expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
         expectValue batch ([], "main") $ \case
           TAST.ValueDef (TAST.EApp (TAST.EVar "foo" _) [TAST.ELit (TAST.LInt 42 _) _] _) _ -> pure ()
           other -> unexpected other
 
         case cs of
-          [CEqual _ (T.Fun [T.Var {}] (T.Var {})) (T.Var "foo" _ _)] -> pure ()
-          other                                    -> unexpected other
+          [  CEqual _ (T.Var "foo" _ _) (T.Var "fun" _ _)
+           , CEqual _ (T.Fun [T.Var {}] (T.Var {})) (T.Var "foo" _ _)
+           , CEqual _ (T.Var "fun" _ _) (T.Fun [T.Var {}] (T.Var {}))] -> pure ()
+
+          other -> unexpected other
+
+    it "constrains constructor invocation" $ do
+      let source = Text.unlines ["Maybe = Just(Int) | None", "main = Just(5)"]
+      expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
+        expectValue batch ([], "main") $ \case
+          TAST.ValueDef (TAST.EApp (TAST.EConstructor "Just" _) [TAST.ELit (TAST.LInt 5 _) _] _) _ -> pure ()
+          other -> unexpected other
+
+        case cs of
+          [CEqual _ (T.Fun [T.Var {}] (T.Var {})) (T.Fun _ _)] -> return ()
+          other -> unexpected other
 
   describe "type definitions" $ do
     it "converts simple type definition" $ do
       let source = "Maybe = Just(Int) | None"
       expectBatch (parseAndConstrain source) $ \(batch, _cs) -> do
         expectTypeDef batch ([], "Maybe") $ \case
-          TAST.TypeDef [TAST.Constructor "Just" _ _, TAST.Constructor "None" [] _] _ -> pure ()
+          TAST.TypeDef t@(T.Var "Maybe" _ _) _ -> do
+            expectValue batch ([], "Just") $ \case
+              TAST.ValueDef (TAST.EConstructor "Just" (TAST.SourceSpanType {_type = (T.Fun [T.Int] consT)})) _ -> consT `shouldBe` t
+              other -> unexpected other
+
+            expectValue batch ([], "None") $ \case
+              TAST.ValueDef (TAST.EConstructor "None" (TAST.SourceSpanType {_type = (T.Fun [] consT)})) _ -> consT `shouldBe` t
+              other -> unexpected other
+
           other -> unexpected other
 
     it "converts type definition with multiple constructors" $ do
       let source = "Result = Success(String) | Error(Int, String)"
       expectBatch (parseAndConstrain source) $ \(batch, _cs) -> do
         expectTypeDef batch ([], "Result") $ \case
-          TAST.TypeDef [TAST.Constructor "Success" [(T.String, _)] _, TAST.Constructor "Error" [(T.Int, _), (T.String, _)] _] _ -> pure ()
+          TAST.TypeDef t@(T.Var "Result" _ _) _ -> do
+            expectValue batch ([], "Success") $ \case
+              TAST.ValueDef (TAST.EConstructor "Success" (TAST.SourceSpanType {_type = (T.Fun [T.String] consT)})) _ -> consT `shouldBe` t
+              other -> unexpected other
+
+            expectValue batch ([], "Error") $ \case
+              TAST.ValueDef (TAST.EConstructor "Error" (TAST.SourceSpanType {_type = (T.Fun [T.Int, T.String] consT)})) _ -> consT `shouldBe` t
+              other -> unexpected other
           other -> unexpected other
+
+
+    it "converts recursive type definitions" $ do
+      -- Sure, this type is not constructable but it should convert
+      let source = Text.unlines ["Foo = Foo(Bar)", "Bar = Bar(Foo)"]
+      expectBatch (parseAndConstrain source) $ \(batch, _cs) -> do
+        let maybeDefs = (,) <$> Map.lookup ([], "Foo") (_typeDefs batch) <*> Map.lookup ([], "Bar") (_typeDefs batch)
+        case maybeDefs of
+          Just (TAST.TypeDef fooT _, TAST.TypeDef barT _) -> do
+            let maybeVals = (,) <$> Map.lookup ([], "Foo") (_valueDefs batch) <*> Map.lookup ([], "Bar") (_valueDefs batch)
+            case maybeVals of
+              Just (TAST.ValueDef fooConstructor _, TAST.ValueDef barConstructor _) -> do
+                typeOf barConstructor `shouldBe` T.Fun [fooT] barT
+                typeOf fooConstructor `shouldBe` T.Fun [barT] fooT
+              Nothing -> expectationFailure "Expected constructors Foo and Bar to be defined, but at least one was not"
+          Nothing -> expectationFailure "Expected types Foo and Bar to be defined, but at least one was not"
 
   describe "type alias definitions" $ do
     it "converts simple type alias" $ do
       let source = "alias String as Name"
       expectBatch (parseAndConstrain source) $ \(batch, _cs) -> do
-        expectTypeAliasDef batch ([], "Name") $ \case
-          TAST.TypeAliasDef T.String _ -> pure ()
-          other                        -> unexpected other
+        expectTypeDef batch ([], "Name") $ \case
+          TAST.TypeDef T.String _ -> pure ()
+          other                   -> unexpected other
 
   describe "mixed definitions" $ do
     it "constrains multiple definitions together" $ do
-      let source = Text.unlines [ "MyType = Value(Int)" , "alias String as Name" , "main = 42" , "add = 1 + 2" ]
+      let source = Text.unlines [ "MyType = Value(Int)" , "alias String as Name" , "main = 42" , "add = Value(5)" ]
       expectBatch (parseAndConstrain source) $ \(batch, _cs) -> do
-        Map.size (TAST._typeDefs batch) `shouldBe` 1
-        Map.size (TAST._typeAliasDefs batch) `shouldBe` 1
-        Map.size (TAST._valueDefs batch) `shouldBe` 2
+        Map.size (TAST._typeDefs batch) `shouldBe` 2
+        Map.size (TAST._valueDefs batch) `shouldBe` 3
 
         expectTypeDef batch ([], "MyType") $ \case
-          TAST.TypeDef [TAST.Constructor "Value" _ _] _ -> pure ()
+          TAST.TypeDef myType@(T.Var "MyType" _ _) _ -> do
+            expectValue batch ([], "Value") $ \case
+              TAST.ValueDef (TAST.EConstructor "Value" (SourceSpanType {_type = (T.Fun [T.Int] retT)})) _ -> do
+                retT `shouldBe` myType
+              other -> unexpected other
+
+            expectValue batch ([], "add") $ \case
+              TAST.ValueDef (TAST.EApp (TAST.EConstructor "Value" (SourceSpanType {_type = (T.Fun [T.Int] retT)})) [TAST.ELit (TAST.LInt 5 _) _] _) _ -> do
+                retT `shouldBe` myType
+              other -> unexpected other
           other -> unexpected other
 
-        expectTypeAliasDef batch ([], "Name") $ \case
-          TAST.TypeAliasDef T.String _ -> pure ()
+        expectTypeDef batch ([], "Name") $ \case
+          TAST.TypeDef T.String _ -> pure ()
           other -> unexpected other
 
         expectValue batch ([], "main") $ \case
           TAST.ValueDef (TAST.ELit (TAST.LInt 42 _) _) _ -> pure ()
-          other -> unexpected other
-
-        expectValue batch ([], "add") $ \case
-          TAST.ValueDef (TAST.EBinary TAST.Add (TAST.ELit (TAST.LInt 1 _) _) (TAST.ELit (TAST.LInt 2 _) _) _) _ -> pure ()
           other -> unexpected other
