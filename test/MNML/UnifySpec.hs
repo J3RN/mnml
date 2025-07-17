@@ -9,7 +9,7 @@ import qualified Data.Map             as Map
 import qualified Data.Set             as Set
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
-import           MNML.AST.Type        (Typed (..))
+import           MNML.AST.Type        (nodeType)
 import qualified MNML.AST.Type        as TAST
 import           MNML.Base            (QualifiedValueReference)
 import           MNML.CompilerState   (emptyState)
@@ -40,61 +40,61 @@ spec = do
       it "unifies 'nUmeRiCs'" $ do
         expectValue (unify' "main = 42") ([], "main") $ \case
           TAST.ValueDef elit@(TAST.ELit lit@(TAST.LInt 42 _) _) _ -> do
-            typeOf elit `shouldBe` T.Var "num" (Set.singleton T.Numeric) 0
-            typeOf lit `shouldBe` T.Var "num" (Set.singleton T.Numeric) 0
+            nodeType elit `shouldBe` T.Var "num" (Set.singleton T.Numeric) 0
+            nodeType lit `shouldBe` T.Var "num" (Set.singleton T.Numeric) 0
           other -> unexpected other
 
       it "unifies floats" $ do
         expectValue (unify' "main = 3.14") ([], "main") $ \case
           TAST.ValueDef elit@(TAST.ELit lit@(TAST.LFloat 3.14 _) _) _ -> do
-            typeOf elit `shouldBe` T.Float
-            typeOf lit `shouldBe` T.Float
+            nodeType elit `shouldBe` T.Float
+            nodeType lit `shouldBe` T.Float
           other -> unexpected other
 
       it "unifies chars" $ do
         expectValue (unify' "main = 'c'") ([], "main") $ \case
           TAST.ValueDef elit@(TAST.ELit lit@(TAST.LChar 'c' _) _) _ -> do
-            typeOf elit `shouldBe` T.Char
-            typeOf lit `shouldBe` T.Char
+            nodeType elit `shouldBe` T.Char
+            nodeType lit `shouldBe` T.Char
           other -> unexpected other
 
       it "unifies strings" $ do
         expectValue (unify' "main = \"Hello world\"") ([], "main") $ \case
           TAST.ValueDef elit@(TAST.ELit lit@(TAST.LString "Hello world" _) _) _ -> do
-            typeOf elit `shouldBe` T.String
-            typeOf lit `shouldBe` T.String
+            nodeType elit `shouldBe` T.String
+            nodeType lit `shouldBe` T.String
           other -> unexpected other
 
     describe "lambdas" $ do
       it "unifies nullary lambdas" $ do
         expectValue (unify' "main = () => { 1 }") ([], "main") $ \case
           TAST.ValueDef fun@(TAST.ELambda [] (TAST.ELit (TAST.LInt 1 _) _) _) _ ->
-            typeOf fun `shouldBe` T.Fun [] (T.Var "num" (Set.singleton T.Numeric) 0)
+            nodeType fun `shouldBe` T.Fun [] (T.Var "num" (Set.singleton T.Numeric) 0)
           other -> unexpected other
 
       it "unifies identity" $ do
         expectValue (unify' "main = (x) => { x }") ([], "main") $ \case
           TAST.ValueDef fun@(TAST.ELambda ["x"] (TAST.EVar "x" _) _) _ ->
-            typeOf fun `shouldBe` T.Fun [T.Var "x" Set.empty 0] (T.Var "x" Set.empty 0)
+            nodeType fun `shouldBe` T.Fun [T.Var "x" Set.empty 0] (T.Var "x" Set.empty 0)
           other -> unexpected other
 
       it "infers parameter types" $ do
         expectValue (unify' "main = (x) => { x + 42 }") ([], "main") $ \case
           TAST.ValueDef fun@(TAST.ELambda ["x"] (TAST.EBinary TAST.Add (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 42 _) _) _) _) _ ->
-            typeOf fun
+            nodeType fun
               `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 1] (T.Var "num" (Set.singleton T.Numeric) 1)
           other -> unexpected other
 
       it "infers (float) parameter type" $ do
         expectValue (unify' "main = (x) => { x + 3.14 }") ([], "main") $ \case
           TAST.ValueDef fun@(TAST.ELambda ["x"] (TAST.EBinary TAST.Add (TAST.EVar "x" _) (TAST.ELit (TAST.LFloat 3.14 _) _) _) _) _ ->
-            typeOf fun `shouldBe` T.Fun [T.Float] T.Float
+            nodeType fun `shouldBe` T.Fun [T.Float] T.Float
           other -> unexpected other
 
       it "infers parameters and result may be the same" $ do
         expectValue (unify' "main = (x, y) => { x + y }") ([], "main") $ \case
           TAST.ValueDef fun@(TAST.ELambda ["x", "y"] (TAST.EBinary TAST.Add (TAST.EVar "x" _) (TAST.EVar "y" _) _) _) _ ->
-            typeOf fun
+            nodeType fun
               `shouldBe` T.Fun
                 [ T.Var "ret" (Set.singleton T.Numeric) 2
                 , T.Var "ret" (Set.singleton T.Numeric) 2
@@ -109,11 +109,11 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef mainFun@(TAST.ELambda [] fooRef@(TAST.EVar "foo" _) _) _ -> do
-            typeOf mainFun `shouldBe` T.Fun [] (T.Var "num" (Set.singleton T.Numeric) 3)
-            typeOf fooRef `shouldBe` T.Var "num" (Set.singleton T.Numeric) 3
+            nodeType mainFun `shouldBe` T.Fun [] (T.Var "num" (Set.singleton T.Numeric) 3)
+            nodeType fooRef `shouldBe` T.Var "num" (Set.singleton T.Numeric) 3
             expectValue (unify' source) ([], "foo") $ \case
               TAST.ValueDef foo@(TAST.ELit (TAST.LInt 5 _) _) _ ->
-                typeOf foo `shouldBe` T.Var "num" (Set.singleton T.Numeric) 2
+                nodeType foo `shouldBe` T.Var "num" (Set.singleton T.Numeric) 2
               other -> unexpected other
           other -> unexpected other
 
@@ -121,19 +121,19 @@ spec = do
       it "unifies empty list" $ do
         expectValue (unify' "main = []") ([], "main") $ \case
           TAST.ValueDef list@(TAST.EList [] _) _ ->
-            typeOf list `shouldBe` T.List (T.Var "elem" Set.empty 0)
+            nodeType list `shouldBe` T.List (T.Var "elem" Set.empty 0)
           other -> unexpected other
 
       it "unifies singleton list" $ do
         expectValue (unify' "main = [1]") ([], "main") $ \case
           TAST.ValueDef list@(TAST.EList [TAST.ELit (TAST.LInt 1 _) _] _) _ ->
-            typeOf list `shouldBe` T.List (T.Var "num" (Set.singleton T.Numeric) 0)
+            nodeType list `shouldBe` T.List (T.Var "num" (Set.singleton T.Numeric) 0)
           other -> unexpected other
 
       it "unifies multiple list" $ do
         expectValue (unify' "main = [1.0, 2.0]") ([], "main") $ \case
           TAST.ValueDef list@(TAST.EList [TAST.ELit (TAST.LFloat 1.0 _) _, TAST.ELit (TAST.LFloat 2.0 _) _] _) _ ->
-            typeOf list `shouldBe` T.List T.Float
+            nodeType list `shouldBe` T.List T.Float
           other -> unexpected other
 
       it "does not unify inconsistent list" $ do
@@ -145,13 +145,13 @@ spec = do
       it "unifies singleton record" $ do
         expectValue (unify' "main = {foo: \"Bar\"}") ([], "main") $ \case
           TAST.ValueDef rec@(TAST.ERecord _ _) _ ->
-            typeOf rec `shouldBe` T.Record (Map.fromList [("foo", T.String)])
+            nodeType rec `shouldBe` T.Record (Map.fromList [("foo", T.String)])
           other -> unexpected other
 
       it "unifies multiple field records" $ do
         expectValue (unify' "main = {foo: \"Bar\", bar: 1.0, baz: 'c'}") ([], "main") $ \case
           TAST.ValueDef rec@(TAST.ERecord _ _) _ ->
-            typeOf rec `shouldBe` T.Record (Map.fromList [("foo", T.String), ("bar", T.Float), ("baz", T.Char)])
+            nodeType rec `shouldBe` T.Record (Map.fromList [("foo", T.String), ("bar", T.Float), ("baz", T.Char)])
           other -> unexpected other
 
     describe "constructors" $ do
@@ -162,7 +162,7 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef app@(TAST.EApp (TAST.EConstructor "Just" _) [TAST.ELit (TAST.LInt 1 _) _] _) _ ->
-            typeOf app `shouldBe` T.AlgebraicType "MaybeInt"
+            nodeType app `shouldBe` T.AlgebraicType "MaybeInt"
           other -> unexpected other
 
       it "unifies raw constructor as function" $ do
@@ -172,7 +172,7 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef cons@(TAST.EConstructor "Just" _) _ ->
-            typeOf cons `shouldBe` T.Fun [T.Int] (T.AlgebraicType "MaybeInt")
+            nodeType cons `shouldBe` T.Fun [T.Int] (T.AlgebraicType "MaybeInt")
           other -> unexpected other
 
       it "unifies raw, nullary constructor" $ do
@@ -182,7 +182,7 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef cons@(TAST.EConstructor "None" _) _ ->
-            typeOf cons `shouldBe` T.AlgebraicType "MaybeInt"
+            nodeType cons `shouldBe` T.AlgebraicType "MaybeInt"
           other -> unexpected other
 
       it "unifies recursive types" $ do
@@ -192,7 +192,7 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef app@(TAST.EApp (TAST.EConstructor "Cons" _) [TAST.ELit (TAST.LInt 5 _) _, TAST.EApp (TAST.EConstructor "Cons" _) [TAST.ELit (TAST.LInt 6 _) _, TAST.EConstructor "Empty" _] _] _) _ ->
-            typeOf app `shouldBe` T.AlgebraicType "IntList"
+            nodeType app `shouldBe` T.AlgebraicType "IntList"
           other -> unexpected other
 
     describe "case" $ do
@@ -200,7 +200,7 @@ spec = do
         let source = Text.unlines ["main = case 4 of", "a -> a"]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef ecase@(TAST.ECase (TAST.ELit (TAST.LInt 4 _) _) [(TAST.PVar "a" _, TAST.EVar "a" _)] _) _ ->
-            typeOf ecase `shouldBe` T.Var "num" (Set.singleton T.Numeric) 0
+            nodeType ecase `shouldBe` T.Var "num" (Set.singleton T.Numeric) 0
           other -> unexpected other
 
       it "unifies two branch case" $ do
@@ -213,10 +213,10 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef c@(TAST.ECase (TAST.EVar "foo" _) [(TAST.PConstructor "Just" [TAST.PVar "n" _] _, TAST.EVar "n" _), (TAST.PConstructor "None" [] _, TAST.ELit (TAST.LInt 5 _) _)] _) _ -> do
-            typeOf c `shouldBe` T.Int
+            nodeType c `shouldBe` T.Int
             expectValue (unify' source) ([], "foo") $ \case
               TAST.ValueDef foo@(TAST.EConstructor "None" _) _ ->
-                typeOf foo `shouldBe` T.AlgebraicType "MaybeInt"
+                nodeType foo `shouldBe` T.AlgebraicType "MaybeInt"
               other -> unexpected other
           other -> unexpected other
 
@@ -230,7 +230,7 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef main@(TAST.ELambda ["foo"] (TAST.ECase (TAST.EVar "foo" _) [(TAST.PRecord [("foo", TAST.PLiteral (TAST.LString "bar" _) _)] _, TAST.ELit (TAST.LInt 1 _) _), (TAST.PRecord [("foo", TAST.PLiteral (TAST.LString "baz" _) _)] _, TAST.ELit (TAST.LInt 2 _) _)] _) _) _ ->
-            typeOf main
+            nodeType main
               `shouldBe` T.Fun
                 [T.PartialRecord (Map.fromList [("foo", T.String)]) 9]
                 (T.Var "num" (Set.singleton T.Numeric) 3)
@@ -246,7 +246,7 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef main@(TAST.ELambda ["x"] (TAST.ECase (TAST.EVar "x" _) [(TAST.PRecord [("foo", TAST.PLiteral (TAST.LString "bar" _) _)] _, TAST.ELit (TAST.LInt 1 _) _), (TAST.PRecord [("bar", TAST.PLiteral (TAST.LFloat 1.0 _) _)] _, TAST.ELit (TAST.LInt 2 _) _)] _) _) _ ->
-            typeOf main
+            nodeType main
               `shouldBe` T.Fun
                 [T.PartialRecord (Map.fromList [("foo", T.String), ("bar", T.Float)]) 9]
                 (T.Var "num" (Set.singleton T.Numeric) 3)
@@ -292,30 +292,30 @@ spec = do
       it "unifies binary of two floats as floats" $ do
         expectValue (unify' "main = 5.5 * 6.0") ([], "main") $ \case
           TAST.ValueDef main@(TAST.EBinary TAST.Mul (TAST.ELit (TAST.LFloat 5.5 _) _) (TAST.ELit (TAST.LFloat 6.0 _) _) _) _ ->
-            typeOf main `shouldBe` T.Float
+            nodeType main `shouldBe` T.Float
           other -> unexpected other
 
       it "unifies binary of float and 'numeric' as float" $ do
         expectValue (unify' "main = 5.5 * 6") ([], "main") $ \case
           TAST.ValueDef main@(TAST.EBinary TAST.Mul (TAST.ELit (TAST.LFloat 5.5 _) _) (TAST.ELit (TAST.LInt 6 _) _) _) _ ->
-            typeOf main `shouldBe` T.Float
+            nodeType main `shouldBe` T.Float
           other -> unexpected other
 
       it "unifies binary of two 'numeric's as numeric" $ do
         expectValue (unify' "main = 5 * 6") ([], "main") $ \case
           TAST.ValueDef main@(TAST.EBinary TAST.Mul (TAST.ELit (TAST.LInt 5 _) _) (TAST.ELit (TAST.LInt 6 _) _) _) _ ->
-            typeOf main `shouldBe` T.Var "num" (Set.singleton T.Numeric) 0
+            nodeType main `shouldBe` T.Var "num" (Set.singleton T.Numeric) 0
           other -> unexpected other
 
       it "unifies module-level value" $ do
         let source = Text.unlines ["main = foo * 5", "foo = 6.1"]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef main@(TAST.EBinary TAST.Mul (TAST.EVar "foo" _) (TAST.ELit (TAST.LInt 5 _) _) _) _ -> do
-            typeOf main `shouldBe` T.Float
+            nodeType main `shouldBe` T.Float
           other -> unexpected other
         expectValue (unify' source) ([], "foo") $ \case
           TAST.ValueDef foo@(TAST.ELit (TAST.LFloat 6.1 _) _) _ ->
-            typeOf foo `shouldBe` T.Float
+            nodeType foo `shouldBe` T.Float
           other -> unexpected other
 
     describe "application" $ do
@@ -326,11 +326,11 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef main@(TAST.EApp (TAST.EVar "foo" _) [TAST.ELit (TAST.LFloat 6.1 _) _] _) _ -> do
-            typeOf main `shouldBe` T.Float
+            nodeType main `shouldBe` T.Float
           other -> unexpected other
         expectValue (unify' source) ([], "foo") $ \case
           TAST.ValueDef foo@(TAST.ELambda ["x"] (TAST.EBinary TAST.Mul (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 5 _) _) _) _) _ ->
-            typeOf foo
+            nodeType foo
               `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 3] (T.Var "num" (Set.singleton T.Numeric) 3)
           other -> unexpected other
 
@@ -349,11 +349,11 @@ spec = do
     --               , foo@(TAST.ELambda ["x"] (TAST.EBinary TAST.Mul (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 5 _) _) _) _)
     --               )
     --           ] -> do
-    --           typeOf main
+    --           nodeType main
     --             `shouldBe` T.Fun
     --               []
     --               (T.Record (Map.fromList [("float", T.Float), ("numeric", T.Var "num" (Set.singleton T.Numeric) 3)]))
-    --           typeOf foo
+    --           nodeType foo
     --             `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 8] (T.Var "num" (Set.singleton T.Numeric) 8)
     --       other -> unexpected other
 
@@ -379,8 +379,8 @@ spec = do
     --                       )
     --               )
     --           ] -> do
-    --           typeOf main `shouldBe` T.Fun [] (T.Record (Map.fromList [("string", T.String), ("float", T.Float)]))
-    --           typeOf foo
+    --           nodeType main `shouldBe` T.Fun [] (T.Record (Map.fromList [("string", T.String), ("float", T.Float)]))
+    --           nodeType foo
     --             `shouldBe` T.Fun
     --               [T.PartialRecord (Map.fromList [("name", T.Var "a" Set.empty 10)]) 12]
     --               (T.Var "a" Set.empty 10)
@@ -393,8 +393,8 @@ spec = do
     --         [ (("test", "main"), main@(TAST.ELambda [] (TAST.EApp (TAST.EVar "foo" _) [] _) _))
     --           , (("test", "foo"), foo@(TAST.ELambda [] (TAST.EApp (TAST.EVar "main" _) [] _) _))
     --           ] -> do
-    --           typeOf main `shouldBe` T.Fun [] (T.Var "ret" Set.empty 1)
-    --           typeOf foo `shouldBe` T.Fun [] (T.Var "ret" Set.empty 4)
+    --           nodeType main `shouldBe` T.Fun [] (T.Var "ret" Set.empty 1)
+    --           nodeType foo `shouldBe` T.Fun [] (T.Var "ret" Set.empty 4)
     --       other -> unexpected other
 
     --   it "unifies practical circular reference" $ do
@@ -453,6 +453,6 @@ spec = do
     --                         )
     --               )
     --           ] -> do
-    --           typeOf main `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 1] (T.AlgebraicType "Bool")
-    --           typeOf oddFun `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 10] (T.AlgebraicType "Bool")
+    --           nodeType main `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 1] (T.AlgebraicType "Bool")
+    --           nodeType oddFun `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 10] (T.AlgebraicType "Bool")
     --       other -> unexpected other

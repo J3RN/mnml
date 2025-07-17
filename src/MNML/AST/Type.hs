@@ -10,6 +10,9 @@ module MNML.AST.Type
     , TypeDef (..)
     , Typed (..)
     , ValueDef (..)
+    , nodeSpan
+    , nodeType
+    , setNodeType
     , typeDefs
     , valueDefs
     ) where
@@ -95,8 +98,14 @@ class Typed a where
   typeOf :: a -> T.Type
   setType :: a -> T.Type -> a
 
-type' :: (Typed a) => Lens' a T.Type
-type' = lens typeOf setType
+nodeType :: (Annotated node, Typed anno) => node anno -> T.Type
+nodeType = typeOf . getAnno
+
+setNodeType :: (Annotated node, Typed anno) => node anno -> T.Type -> node anno
+setNodeType node t = setAnno node (setType (getAnno node) t)
+
+nodeSpan :: (Annotated node, Spanned anno) => node anno -> SourceSpan
+nodeSpan = spanOf . getAnno
 
 class Annotated a where
   getAnno :: a b -> b
@@ -127,12 +136,12 @@ instance Functor Literal where
   fmap f (LString s anno)    = LString s (f anno)
 
 instance Functor Pattern where
-  fmap f (PVar name anno) = PVar name (f anno)
-  fmap f (PDiscard anno)  = PDiscard (f anno)
+  fmap f (PVar name anno)                 = PVar name (f anno)
+  fmap f (PDiscard anno)                  = PDiscard (f anno)
   fmap f (PConstructor name argPats anno) = PConstructor name (map (fmap f) argPats) (f anno)
-  fmap f (PRecord fieldSpec anno) = PRecord (map (second (fmap f)) fieldSpec) (f anno)
-  fmap f (PList members anno) = PList (map (fmap f) members) (f anno)
-  fmap f (PLiteral lit anno)= PLiteral (fmap f lit) (f anno)
+  fmap f (PRecord fieldSpec anno)         = PRecord (map (second (fmap f)) fieldSpec) (f anno)
+  fmap f (PList members anno)             = PList (map (fmap f) members) (f anno)
+  fmap f (PLiteral lit anno)              = PLiteral (fmap f lit) (f anno)
 
 instance Annotated Expr where
   getAnno (EVar _ anno)         = anno
@@ -155,13 +164,6 @@ instance Annotated Expr where
   setAnno (ERecord fieldSpec _) anno   = ERecord fieldSpec anno
   setAnno (EList members _) anno       = EList members anno
 
-instance (Typed anno) => Typed (Expr anno) where
-  typeOf expr = typeOf (getAnno expr)
-  setType expr t = setAnno expr (setType (getAnno expr) t)
-
-instance (Spanned anno) => Spanned (Expr anno) where
-  spanOf expr = spanOf (getAnno expr)
-
 instance Annotated Literal where
   getAnno (LInt _ anno)    = anno
   getAnno (LFloat _ anno)  = anno
@@ -172,13 +174,6 @@ instance Annotated Literal where
   setAnno (LFloat f _) anno  = LFloat f anno
   setAnno (LChar c _) anno   = LChar c anno
   setAnno (LString s _) anno = LString s anno
-
-instance (Typed anno) => Typed (Literal anno) where
-  typeOf lit = typeOf (getAnno lit)
-  setType lit t = setAnno lit (setType (getAnno lit) t)
-
-instance (Spanned anno) => Spanned (Literal anno) where
-  spanOf lit = spanOf (getAnno lit)
 
 instance Annotated Pattern where
   getAnno (PVar _ anno)           = anno
@@ -194,10 +189,3 @@ instance Annotated Pattern where
   setAnno (PRecord fieldSpec _) anno      = PRecord fieldSpec anno
   setAnno (PList members _) anno          = PList members anno
   setAnno (PLiteral lit _) anno           = PLiteral lit anno
-
-instance (Typed anno) => Typed (Pattern anno) where
-  typeOf pat = typeOf (getAnno pat)
-  setType pat t = setAnno pat (setType (getAnno pat) t)
-
-instance (Spanned anno) => Spanned (Pattern anno) where
-  spanOf pat = spanOf (getAnno pat)

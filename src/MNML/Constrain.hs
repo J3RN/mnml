@@ -14,9 +14,9 @@ import qualified Data.Set             as Set
 import           Data.Text            (Text)
 import           Lens.Micro           (Lens', lens, over, set)
 import           Lens.Micro.Extras    (view)
-import           MNML.AST.Span        (spanOf)
 import qualified MNML.AST.Span        as SAST
-import           MNML.AST.Type        (Annotated (..), typeOf)
+import           MNML.AST.Type        (Annotated (..), nodeSpan, nodeType,
+                                       setNodeType)
 import qualified MNML.AST.Type        as TAST
 import           MNML.Base            (ModName, QualifiedConstructorReference,
                                        QualifiedTypeReference,
@@ -131,7 +131,7 @@ getBatchType :: QualifiedTypeReference -> ConstrainEnv -> Maybe T.Type
 getBatchType qtr env = (\(TAST.TypeDef t _) -> t) <$> Map.lookup qtr (view typeDefs env)
 
 getBatchValueType :: QualifiedValueReference -> ConstrainEnv -> Maybe T.Type
-getBatchValueType qvr env = (\(TAST.ValueDef expr _) -> typeOf expr) <$> Map.lookup qvr (view valueDefs env)
+getBatchValueType qvr env = (\(TAST.ValueDef expr _) -> nodeType expr) <$> Map.lookup qvr (view valueDefs env)
 
 -- The real meat
 
@@ -160,7 +160,7 @@ constrain' (SAST.EConstructor name spanA) = do
     Just expectedType -> return (TAST.EConstructor name (spanToSpanType spanA expectedType), [])
 constrain' (SAST.ELit lit spanA) = do
   lit' <- litToLit lit
-  return (TAST.ELit lit' (spanToSpanType spanA (typeOf lit')), [])
+  return (TAST.ELit lit' (spanToSpanType spanA (nodeType lit')), [])
 constrain' (SAST.ELambda args body spanA) = do
   (argVars, body', bodyConstraints) <- withNewScope $ do
     argVars <- mapM declareVar args
@@ -169,7 +169,7 @@ constrain' (SAST.ELambda args body spanA) = do
   retType <- freshTypeVar "fun" []
   return
     ( TAST.ELambda args body' (spanToSpanType spanA retType)
-    , C.CEqual spanA retType (T.Fun argVars (typeOf body')) : bodyConstraints
+    , C.CEqual spanA retType (T.Fun argVars (nodeType body')) : bodyConstraints
     )
 constrain' (SAST.EApp funExpr argExprs spanA) = do
   (funExpr', fc) <- constrain' funExpr
@@ -179,7 +179,7 @@ constrain' (SAST.EApp funExpr argExprs spanA) = do
   retType <- freshTypeVar "ret" []
   return
     ( TAST.EApp funExpr' argExprs' (spanToSpanType spanA retType)
-    , C.CEqual spanA (T.Fun (map typeOf argExprs') retType) (typeOf funExpr') : fc ++ argConstraints
+    , C.CEqual spanA (T.Fun (map nodeType argExprs') retType) (nodeType funExpr') : fc ++ argConstraints
     )
 constrain' (SAST.ECase subj branches spanA) = do
   (subj', subjConstraints) <- constrain' subj
@@ -187,10 +187,10 @@ constrain' (SAST.ECase subj branches spanA) = do
   retType <- freshTypeVar "ret" []
   let (patterns', clauseExprs') = unzip branches'
       -- The subject type will need to match every pattern
-      patternConstraints = map (C.CEqual spanA (typeOf subj') . typeOf . fst) patterns'
+      patternConstraints = map (C.CEqual spanA (nodeType subj') . nodeType . fst) patterns'
       patternSubConstraints = concatMap snd patterns'
       -- Every clause type must match the return type of the case expression
-      clauseConstraints = map (C.CEqual spanA retType . typeOf . fst) clauseExprs'
+      clauseConstraints = map (C.CEqual spanA retType . nodeType . fst) clauseExprs'
       clauseSubConstraints = concatMap snd clauseExprs'
   return
     ( TAST.ECase subj' (map (bimap fst fst) branches') (spanToSpanType spanA retType)
@@ -211,8 +211,8 @@ constrain' (SAST.EBinary op left right spanA) = do
   (left', lConstraints) <- constrain' left
   (right', rConstraints) <- constrain' right
   retVar <- freshTypeVar "ret" [T.Numeric]
-  let lConstraint = C.CEqual spanA retVar (typeOf left')
-      rConstraint = C.CEqual spanA retVar (typeOf right')
+  let lConstraint = C.CEqual spanA retVar (nodeType left')
+      rConstraint = C.CEqual spanA retVar (nodeType right')
   return
     ( TAST.EBinary (opToOp op) left' right' (spanToSpanType spanA retVar)
     , lConstraint : rConstraint : lConstraints ++ rConstraints
@@ -224,13 +224,13 @@ constrain' (SAST.ERecord fields spanA) = do
   retType <- freshTypeVar "ret" []
   return
     ( TAST.ERecord fields' (spanToSpanType spanA retType)
-    , C.CEqual spanA retType (T.Record (Map.fromList (map (second typeOf) fields'))) : fieldConstraints
+    , C.CEqual spanA retType (T.Record (Map.fromList (map (second nodeType) fields'))) : fieldConstraints
     )
 constrain' (SAST.EList elems spanA) = do
   elemResults <- mapM constrain' elems
   elemType <- freshTypeVar "elem" []
   retType <- freshTypeVar "ret" []
-  let consistencyConstraints = map ((\node -> C.CEqual (spanOf node) elemType (typeOf node)) . fst) elemResults
+  let consistencyConstraints = map ((\node -> C.CEqual (nodeSpan node) elemType (nodeType node)) . fst) elemResults
       elemConstraints = concatMap snd elemResults
   return
     ( TAST.EList (map fst elemResults) (spanToSpanType spanA retType)
@@ -257,13 +257,13 @@ constrainPattern (SAST.PConstructor name argPatterns spanA) = do
       Nothing -> (,[]) <$> giveUp (UnknownConstructor qvr spanA) name
       Just funType@(T.Fun _ _) -> do
         retType <- freshTypeVar name []
-        return (retType, [C.CEqual spanA (T.Fun (map typeOf argPatterns') retType) funType])
+        return (retType, [C.CEqual spanA (T.Fun (map nodeType argPatterns') retType) funType])
       Just t -> pure (t, [])
   return (TAST.PConstructor name argPatterns' (spanToSpanType spanA retType), cons ++ argSubCons)
 constrainPattern (SAST.PRecord fieldSpec spanA) = do
   (fieldSpec', fieldConstraints) <- foldM foldRecord ([], []) fieldSpec
   retType <- freshTypeVar "record" []
-  partialRecordType <- freshPartialRecord (Map.fromList (map (second typeOf) fieldSpec'))
+  partialRecordType <- freshPartialRecord (Map.fromList (map (second nodeType) fieldSpec'))
   return
     ( TAST.PRecord fieldSpec' (spanToSpanType spanA retType)
     , C.CEqual spanA retType partialRecordType : fieldConstraints
@@ -276,11 +276,11 @@ constrainPattern (SAST.PRecord fieldSpec spanA) = do
 constrainPattern (SAST.PList elemPats spanA) = do
   (elemPats', elemCons) <- mapAndUnzipM constrainPattern elemPats
   elemType <- freshTypeVar "ret" []
-  let retCons = map (C.CEqual spanA elemType . typeOf) elemPats'
+  let retCons = map (C.CEqual spanA elemType . nodeType) elemPats'
   return (TAST.PList elemPats' (spanToSpanType spanA elemType), concat (retCons : elemCons))
 constrainPattern (SAST.PLiteral lit spanA) = do
   lit' <- litToLit lit
-  return (TAST.PLiteral lit' (spanToSpanType spanA (typeOf lit')), [])
+  return (TAST.PLiteral lit' (spanToSpanType spanA (nodeType lit')), [])
 
 freshTypeVar :: ValName -> [T.Trait] -> Constrain T.Type
 freshTypeVar name traits = T.Var name (Set.fromList traits) <$> lift varIdPlusPlus
@@ -417,7 +417,7 @@ replaceTypeInValueDef rep (TAST.ValueDef expr spanA) = TAST.ValueDef (replaceTyp
 replaceTypeInExpr :: Replacement -> Expr -> Expr
 replaceTypeInExpr rep expr = replaceTypeInSourceSpanType <$> expr
   where replaceTypeInSourceSpanType :: TAST.SourceSpanType -> TAST.SourceSpanType
-        replaceTypeInSourceSpanType sst = TAST.setType sst (replaceTypeInType rep (typeOf sst))
+        replaceTypeInSourceSpanType sst = TAST.setType sst (replaceTypeInType rep (TAST.typeOf sst))
 
 reconcileTempValueTypes :: Constrain ()
 reconcileTempValueTypes = do

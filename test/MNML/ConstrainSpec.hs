@@ -9,6 +9,7 @@ import qualified Data.Map             as Map
 import qualified Data.Set             as Set
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
+import           MNML.AST.Type        (nodeType)
 import           MNML.AST.Type        as TAST
 import           MNML.Base            (QualifiedTypeReference,
                                        QualifiedValueReference)
@@ -52,8 +53,8 @@ spec = do
       expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
         expectValue batch ([], "main") $ \case
           TAST.ValueDef lit@(TAST.ELit float@(TAST.LFloat 2.7 _) _) _ -> do
-            typeOf lit `shouldBe` T.Float
-            typeOf float `shouldBe` T.Float
+            nodeType lit `shouldBe` T.Float
+            nodeType float `shouldBe` T.Float
           other -> unexpected other
         cs `shouldBe` []
 
@@ -62,8 +63,8 @@ spec = do
       expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
         expectValue batch ([], "main") $ \case
           TAST.ValueDef lit@(TAST.ELit string@(TAST.LString "hello" _) _) _ -> do
-            typeOf lit `shouldBe` T.String
-            typeOf string `shouldBe` T.String
+            nodeType lit `shouldBe` T.String
+            nodeType string `shouldBe` T.String
           other -> unexpected other
         cs `shouldBe` []
 
@@ -72,14 +73,14 @@ spec = do
       expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
         expectValue batch ([], "main") $ \case
           TAST.ValueDef bin@(TAST.EBinary TAST.Add (TAST.ELit (TAST.LFloat 5.0 _) _) (TAST.ELit (TAST.LFloat 3.0 _) _) _) _ -> do
-            case typeOf bin of
+            case nodeType bin of
               (T.Var "ret" traits _) -> traits `shouldBe` Set.fromList [T.Numeric]
               other                  -> unexpected other
 
             case cs of
               [CEqual _ lhs@(T.Var "ret" _ _) T.Float, CEqual _ rhs@(T.Var "ret" _ _) T.Float] -> do
-                lhs `shouldBe` typeOf bin
-                rhs `shouldBe` typeOf bin
+                lhs `shouldBe` nodeType bin
+                rhs `shouldBe` nodeType bin
               other -> unexpected other
           other -> unexpected other
 
@@ -94,7 +95,7 @@ spec = do
         expectValue batch ([], "main") $ \case
           TAST.ValueDef foo@(TAST.EVar "foo" _) _ ->
             case cs of
-              [CEqual _ fooType@(T.Var "foo" _ _) T.Float] -> fooType `shouldBe` typeOf foo
+              [CEqual _ fooType@(T.Var "foo" _ _) T.Float] -> fooType `shouldBe` nodeType foo
               other                                        -> unexpected other
           other -> unexpected other
 
@@ -168,8 +169,8 @@ spec = do
             let maybeVals = (,) <$> Map.lookup ([], "Foo") (_valueDefs batch) <*> Map.lookup ([], "Bar") (_valueDefs batch)
             case maybeVals of
               Just (TAST.ValueDef fooConstructor _, TAST.ValueDef barConstructor _) -> do
-                typeOf barConstructor `shouldBe` T.Fun [fooT] barT
-                typeOf fooConstructor `shouldBe` T.Fun [barT] fooT
+                nodeType barConstructor `shouldBe` T.Fun [fooT] barT
+                nodeType fooConstructor `shouldBe` T.Fun [barT] fooT
               Nothing -> expectationFailure "Expected constructors Foo and Bar to be defined, but at least one was not"
           Nothing -> expectationFailure "Expected types Foo and Bar to be defined, but at least one was not"
 
