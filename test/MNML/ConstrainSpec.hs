@@ -139,7 +139,7 @@ spec = do
               other -> unexpected other
 
             expectValue batch ([], "None") $ \case
-              TAST.ValueDef (TAST.EConstructor "None" (TAST.SourceSpanType {_type = (T.Fun [] consT)})) _ -> consT `shouldBe` t
+              TAST.ValueDef (TAST.EConstructor "None" (TAST.SourceSpanType {_type = consT})) _ -> consT `shouldBe` t
               other -> unexpected other
 
           other -> unexpected other

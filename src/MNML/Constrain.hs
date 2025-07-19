@@ -333,9 +333,12 @@ defineConstructor :: T.Type -> SAST.Constructor -> Constrain ()
 defineConstructor t (SAST.Constructor cName cArgs spanA) = do
   -- TODO: Double check this module fetch
   modName <- gets _module
-  newArgs <- mapM typify cArgs
-  let cType = T.Fun newArgs t
-      cValDef = TAST.ValueDef (TAST.EConstructor cName (spanToSpanType spanA cType)) spanA
+  cType <- case cArgs of
+             -- A constructor without args is considered an instance of its type
+             [] -> pure t
+             -- A constructor with args is considered a function returning its type
+             _  -> (`T.Fun` t) <$> mapM typify cArgs
+  let cValDef = TAST.ValueDef (TAST.EConstructor cName (spanToSpanType spanA cType)) spanA
   modify (over valueDefs (Map.insert (modName, cName) cValDef))
 
 constrain :: SAST.Batch -> Fallible (TAST.Batch, [C.Constraint])
