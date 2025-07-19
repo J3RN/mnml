@@ -345,8 +345,8 @@ constrain :: SAST.Batch -> Fallible (TAST.Batch, [C.Constraint])
 constrain defs = do
   res <- lift (execStateT (extractTypeDefs
                            >> extractTypeAliases
-                           >> extractValueDefs
                            >> reconcileTempTypes
+                           >> extractValueDefs
                            >> reconcileTempValueTypes) (initialEnv [] defs))
   case res of
     env@(ConstrainEnv {_errors = []}) ->
