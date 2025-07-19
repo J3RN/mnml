@@ -285,6 +285,9 @@ constrainPattern (SAST.PLiteral lit spanA) = do
 freshTypeVar :: ValName -> [T.Trait] -> Constrain T.Type
 freshTypeVar name traits = T.Var name (Set.fromList traits) <$> lift varIdPlusPlus
 
+freshAlgebraicType :: TypeName -> Constrain T.Type
+freshAlgebraicType name = T.AlgebraicType name <$> lift varIdPlusPlus
+
 freshPartialRecord :: T.FieldSpec -> Constrain T.Type
 freshPartialRecord fields = T.PartialRecord fields <$> lift varIdPlusPlus
 
@@ -359,7 +362,7 @@ extractTypeDefs :: Constrain ()
 extractTypeDefs = extractDefinitions typeDef
   where
     typeDef (SAST.TypeDef qtr constructors spanA) = do
-      t <- freshTypeVar (snd qtr) []
+      t <- freshAlgebraicType (snd qtr)
       mapM_ (defineConstructor t) constructors
       modify (over typeDefs (Map.insert qtr (TAST.TypeDef t spanA)))
     typeDef _ = return ()
@@ -409,7 +412,7 @@ replaceTypeInType _ T.String                  = T.String
 replaceTypeInType rep (T.List t)              = T.List (replaceTypeInType rep t)
 replaceTypeInType rep (T.Fun argTs retT)      = T.Fun (map (replaceTypeInType rep) argTs) (replaceTypeInType rep retT)
 replaceTypeInType rep (T.Record fieldSpec)    = T.Record (Map.map (replaceTypeInType rep) fieldSpec)
-replaceTypeInType _ t@(T.AlgebraicType _)     = t
+replaceTypeInType _ t@(T.AlgebraicType _ _)   = t
 replaceTypeInType rep (T.TypeAlias alias t)   = T.TypeAlias alias (replaceTypeInType rep t)
 replaceTypeInType (tempT, realT) t@(T.Var {}) = if t == tempT then realT else t
 replaceTypeInType rep (T.PartialRecord fieldSpec varId) = T.PartialRecord (Map.map (replaceTypeInType rep) fieldSpec) varId

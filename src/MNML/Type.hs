@@ -25,7 +25,7 @@ data Type
   | List Type
   | Fun [Type] Type
   | Record FieldSpec
-  | AlgebraicType Text
+  | AlgebraicType Text VarId
   | TypeAlias Text Type
   -- Type var "a" requiring types to implement traits
   | Var Text (Set Trait) VarId

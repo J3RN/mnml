@@ -3,8 +3,7 @@ module MNML.Unify
     ) where
 
 import           Control.Monad.Except (throwError)
-import           Control.Monad.State  (State, StateT, execStateT, lift, modify,
-                                       runStateT)
+import           Control.Monad.State  (State, StateT, lift, modify, runStateT)
 import           Data.Bifunctor       (bimap, second)
 import           Data.Function        (on)
 import qualified Data.List            as List
@@ -154,7 +153,7 @@ occursIn var (T.List elemType) = var `occursIn` elemType
 occursIn var (T.Fun argTypes retType) = any (var `occursIn`) argTypes || var `occursIn` retType
 occursIn var (T.Record fieldSpec) = any (var `occursIn`) fieldSpec
 -- Algebraic types currently don't support vars (but will)
-occursIn _ (T.AlgebraicType _) = False
+occursIn _ (T.AlgebraicType _ _) = False
 occursIn var (T.TypeAlias _ t) = occursIn var t
 occursIn var1 var2 | var1 == var2 = True
 occursIn _ (T.Var {}) = False
@@ -168,7 +167,7 @@ applySubst _ T.String = T.String
 applySubst subs (T.List elemType) = T.List (applySubst subs elemType)
 applySubst subs (T.Fun argTypes retType) = T.Fun (map (applySubst subs) argTypes) (applySubst subs retType)
 applySubst subs (T.Record fieldSpec) = T.Record (Map.map (applySubst subs) fieldSpec)
-applySubst _ (T.AlgebraicType name) = T.AlgebraicType name
+applySubst _ t@(T.AlgebraicType {}) = t
 applySubst subs (T.TypeAlias name t) = T.TypeAlias name (applySubst subs t)
 applySubst (var1, rep) var2 | var1 == var2 = rep
 applySubst _ var@(T.Var {}) = var

@@ -133,7 +133,7 @@ spec = do
       let source = "Maybe = Just(Int) | None"
       expectBatch (parseAndConstrain source) $ \(batch, _cs) -> do
         expectTypeDef batch ([], "Maybe") $ \case
-          TAST.TypeDef t@(T.Var "Maybe" _ _) _ -> do
+          TAST.TypeDef t@(T.AlgebraicType "Maybe" _) _ -> do
             expectValue batch ([], "Just") $ \case
               TAST.ValueDef (TAST.EConstructor "Just" (TAST.SourceSpanType {_type = (T.Fun [T.Int] consT)})) _ -> consT `shouldBe` t
               other -> unexpected other
@@ -148,7 +148,7 @@ spec = do
       let source = "Result = Success(String) | Error(Int, String)"
       expectBatch (parseAndConstrain source) $ \(batch, _cs) -> do
         expectTypeDef batch ([], "Result") $ \case
-          TAST.TypeDef t@(T.Var "Result" _ _) _ -> do
+          TAST.TypeDef t@(T.AlgebraicType "Result" _) _ -> do
             expectValue batch ([], "Success") $ \case
               TAST.ValueDef (TAST.EConstructor "Success" (TAST.SourceSpanType {_type = (T.Fun [T.String] consT)})) _ -> consT `shouldBe` t
               other -> unexpected other
@@ -190,7 +190,7 @@ spec = do
         Map.size (TAST._valueDefs batch) `shouldBe` 3
 
         expectTypeDef batch ([], "MyType") $ \case
-          TAST.TypeDef myType@(T.Var "MyType" _ _) _ -> do
+          TAST.TypeDef myType@(T.AlgebraicType "MyType" _) _ -> do
             expectValue batch ([], "Value") $ \case
               TAST.ValueDef (TAST.EConstructor "Value" (SourceSpanType {_type = (T.Fun [T.Int] retT)})) _ -> do
                 retT `shouldBe` myType
