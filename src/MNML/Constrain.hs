@@ -155,6 +155,7 @@ constrain' (SAST.EConstructor name spanA) = do
   expectedTypeRes <- constructorType qvr
   case expectedTypeRes of
     Nothing -> do
+      -- Assumes that we *cannot* find the constructor type
       t <- giveUp (UnknownConstructor qvr spanA) name
       return (TAST.EConstructor name (spanToSpanType spanA t), [])
     Just expectedType -> return (TAST.EConstructor name (spanToSpanType spanA expectedType), [])
