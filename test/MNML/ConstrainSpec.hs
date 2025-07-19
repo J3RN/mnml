@@ -83,6 +83,25 @@ spec = do
               other -> unexpected other
           other -> unexpected other
 
+    it "constrains binary expressions with variables" $ do
+      let source = "main = (x) => {x + 5.0}"
+      expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
+        expectValue batch ([], "main") $ \case
+          TAST.ValueDef (TAST.ELambda ["x"] bin@(TAST.EBinary TAST.Add (TAST.EVar "x" _) (TAST.ELit (TAST.LFloat 5.0 _) _) _) _) _ -> do
+            case nodeType bin of
+              (T.Var "ret" traits _) -> traits `shouldBe` Set.fromList [T.Numeric]
+              other                  -> unexpected other
+
+            case cs of
+              [  CEqual _ (T.Var "fun" _ _) (T.Fun [xVar@(T.Var "x" _ _)] ret@(T.Var "ret" _ _))
+               , CEqual _ lhs@(T.Var "ret" _ _) xVar'@(T.Var "x" _ _)
+               , CEqual _ rhs@(T.Var "ret" _ _) T.Float] -> do
+                xVar' `shouldBe` xVar
+                ret `shouldBe` nodeType bin
+                lhs `shouldBe` nodeType bin
+                rhs `shouldBe` nodeType bin
+              other -> unexpected other
+          other -> unexpected other
 
     it "constrains local references" $ do
       let source = Text.unlines ["main = foo", "foo = 5.0"]
@@ -208,3 +227,30 @@ spec = do
         expectValue batch ([], "main") $ \case
           TAST.ValueDef (TAST.ELit (TAST.LInt 42 _) _) _ -> pure ()
           other -> unexpected other
+
+    it "constrains recursive types" $ do
+      let source = Text.unlines
+                     [ "IntList = Empty | Cons(Int, IntList)"
+                     , "main = Cons(5, Cons(6, Empty))"
+                     ]
+      expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
+        expectTypeDef batch ([], "IntList") $ \case
+          TAST.TypeDef intListT@(T.AlgebraicType "IntList" _) _ -> do
+            expectValue batch ([], "Cons") $ \case
+              TAST.ValueDef (TAST.EConstructor "Cons" (SourceSpanType {_type = T.Fun [T.Int, intListT'] intListT''})) _ -> do
+                intListT' `shouldBe` intListT
+                intListT'' `shouldBe` intListT
+              other -> unexpected other
+
+            expectValue batch ([], "Empty") $ \case
+              TAST.ValueDef (TAST.EConstructor "Empty" (SourceSpanType {_type = intListT'})) _ -> do
+                intListT' `shouldBe` intListT
+              other -> unexpected other
+          other -> unexpected other
+
+        case cs of
+          [CEqual _ (T.Fun [T.Var "num" _ 2, T.Var "ret"     _ 4        ] (T.Var "ret"     _ 5))
+                    (T.Fun [T.Int,           T.AlgebraicType "IntList" 0] (T.AlgebraicType "IntList" 0)),
+           CEqual _ (T.Fun [T.Var "num" _ 3, T.AlgebraicType "IntList" 0] (T.Var "ret"     _ 4))
+                    (T.Fun [T.Int,           T.AlgebraicType "IntList" 0] (T.AlgebraicType "IntList" 0))] -> return ()
+          other  -> unexpected other

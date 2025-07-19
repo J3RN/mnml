@@ -9,7 +9,7 @@ import qualified Data.Map             as Map
 import qualified Data.Set             as Set
 import           Data.Text            (Text)
 import qualified Data.Text            as Text
-import           MNML.AST.Type        (nodeType)
+import           MNML.AST.Type        (SourceSpanType (..), nodeType)
 import qualified MNML.AST.Type        as TAST
 import           MNML.Base            (QualifiedValueReference)
 import           MNML.CompilerState   (emptyState)
@@ -110,6 +110,7 @@ spec = do
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef mainFun@(TAST.ELambda [] fooRef@(TAST.EVar "foo" _) _) _ -> do
             nodeType mainFun `shouldBe` T.Fun [] (T.Var "num" (Set.singleton T.Numeric) 3)
+            -- fooRef's type is *isomorphic* to foo, but is not the same to preserve numeric polymorphism (see lower)
             nodeType fooRef `shouldBe` T.Var "num" (Set.singleton T.Numeric) 3
             expectValue (unify' source) ([], "foo") $ \case
               TAST.ValueDef foo@(TAST.ELit (TAST.LInt 5 _) _) _ ->
@@ -161,8 +162,7 @@ spec = do
               , "main = Just(1)"
               ]
         expectValue (unify' source) ([], "main") $ \case
-          TAST.ValueDef app@(TAST.EApp (TAST.EConstructor "Just" _) [TAST.ELit (TAST.LInt 1 _) _] _) _ ->
-            nodeType app `shouldBe` T.AlgebraicType "MaybeInt"
+          TAST.ValueDef (TAST.EApp (TAST.EConstructor "Just" (SourceSpanType {_type = T.Fun [T.Int] (T.AlgebraicType "MaybeInt" _)})) [TAST.ELit (TAST.LInt 1 _) _] _) _ -> pure ()
           other -> unexpected other
 
       it "unifies raw constructor as function" $ do
@@ -171,8 +171,8 @@ spec = do
               , "main = Just"
               ]
         expectValue (unify' source) ([], "main") $ \case
-          TAST.ValueDef cons@(TAST.EConstructor "Just" _) _ ->
-            nodeType cons `shouldBe` T.Fun [T.Int] (T.AlgebraicType "MaybeInt")
+          TAST.ValueDef (TAST.EConstructor "Just" (SourceSpanType {_type = T.Fun [T.Int] (T.AlgebraicType "MaybeInt" _)})) _ ->
+            return ()
           other -> unexpected other
 
       it "unifies raw, nullary constructor" $ do
@@ -181,8 +181,8 @@ spec = do
               , "main = None"
               ]
         expectValue (unify' source) ([], "main") $ \case
-          TAST.ValueDef cons@(TAST.EConstructor "None" _) _ ->
-            nodeType cons `shouldBe` T.AlgebraicType "MaybeInt"
+          TAST.ValueDef (TAST.EConstructor "None" (SourceSpanType {_type = T.AlgebraicType "MaybeInt" _})) _ ->
+            return ()
           other -> unexpected other
 
       it "unifies recursive types" $ do
@@ -191,8 +191,8 @@ spec = do
               , "main = Cons(5, Cons(6, Empty))"
               ]
         expectValue (unify' source) ([], "main") $ \case
-          TAST.ValueDef app@(TAST.EApp (TAST.EConstructor "Cons" _) [TAST.ELit (TAST.LInt 5 _) _, TAST.EApp (TAST.EConstructor "Cons" _) [TAST.ELit (TAST.LInt 6 _) _, TAST.EConstructor "Empty" _] _] _) _ ->
-            nodeType app `shouldBe` T.AlgebraicType "IntList"
+          TAST.ValueDef (TAST.EApp (TAST.EConstructor "Cons" _) [TAST.ELit (TAST.LInt 5 _) _, TAST.EApp (TAST.EConstructor "Cons" _) [TAST.ELit (TAST.LInt 6 _) _, TAST.EConstructor "Empty" _] _] (SourceSpanType {_type = T.AlgebraicType "IntList" _})) _ ->
+            return ()
           other -> unexpected other
 
     describe "case" $ do
@@ -215,8 +215,8 @@ spec = do
           TAST.ValueDef c@(TAST.ECase (TAST.EVar "foo" _) [(TAST.PConstructor "Just" [TAST.PVar "n" _] _, TAST.EVar "n" _), (TAST.PConstructor "None" [] _, TAST.ELit (TAST.LInt 5 _) _)] _) _ -> do
             nodeType c `shouldBe` T.Int
             expectValue (unify' source) ([], "foo") $ \case
-              TAST.ValueDef foo@(TAST.EConstructor "None" _) _ ->
-                nodeType foo `shouldBe` T.AlgebraicType "MaybeInt"
+              TAST.ValueDef (TAST.EConstructor "None" (SourceSpanType {_type = T.AlgebraicType "MaybeInt" _})) _ ->
+                return ()
               other -> unexpected other
           other -> unexpected other
 
@@ -325,13 +325,15 @@ spec = do
               , "foo = (x) => {x * 5}"
               ]
         expectValue (unify' source) ([], "main") $ \case
-          TAST.ValueDef main@(TAST.EApp (TAST.EVar "foo" _) [TAST.ELit (TAST.LFloat 6.1 _) _] _) _ -> do
+          TAST.ValueDef main@(TAST.EApp fooRef@(TAST.EVar "foo" _) [TAST.ELit (TAST.LFloat 6.1 _) _] _) _ -> do
+            -- This reference to foo was monomorphized to Float, while foo itself is still generic (see below)
+            nodeType fooRef `shouldBe` T.Fun [T.Float] T.Float
             nodeType main `shouldBe` T.Float
+            pure ()
           other -> unexpected other
         expectValue (unify' source) ([], "foo") $ \case
           TAST.ValueDef foo@(TAST.ELambda ["x"] (TAST.EBinary TAST.Mul (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 5 _) _) _) _) _ ->
-            nodeType foo
-              `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 3] (T.Var "num" (Set.singleton T.Numeric) 3)
+            nodeType foo `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 3] (T.Var "num" (Set.singleton T.Numeric) 3)
           other -> unexpected other
 
     --   it "allows functions with type constraints to stay generic" $ do

@@ -5,11 +5,13 @@ module MNML.Constrain
 import           Control.Applicative  ((<|>))
 import           Control.Monad        (foldM, mapAndUnzipM)
 import           Control.Monad.Except (MonadError (throwError))
-import           Control.Monad.State  (State, StateT, execStateT, gets, lift,
+import           Control.Monad.State  (State, StateT, evalState, evalStateT,
+                                       execState, execStateT, gets, lift,
                                        modify)
 import           Data.Bifunctor       (bimap, second)
 import           Data.Map             (Map, (!?))
 import qualified Data.Map             as Map
+import           Data.Maybe           (fromMaybe)
 import qualified Data.Set             as Set
 import           Data.Text            (Text)
 import           Lens.Micro           (Lens', lens, over, set)
@@ -20,7 +22,8 @@ import           MNML.AST.Type        (Annotated (..), nodeSpan, nodeType,
 import qualified MNML.AST.Type        as TAST
 import           MNML.Base            (ModName, QualifiedConstructorReference,
                                        QualifiedTypeReference,
-                                       QualifiedValueReference, ValName)
+                                       QualifiedValueReference, TypeName,
+                                       ValName)
 import           MNML.CompilerState   (CompilerState (..), lookupType,
                                        lookupVal, varIdPlusPlus)
 import qualified MNML.Constraint      as C
@@ -284,7 +287,10 @@ constrainPattern (SAST.PLiteral lit spanA) = do
   return (TAST.PLiteral lit' (spanToSpanType spanA (nodeType lit')), [])
 
 freshTypeVar :: ValName -> [T.Trait] -> Constrain T.Type
-freshTypeVar name traits = T.Var name (Set.fromList traits) <$> lift varIdPlusPlus
+freshTypeVar name traits = lift (freshTypeVar' name traits)
+
+freshTypeVar' :: ValName -> [T.Trait] -> State CompilerState T.Type
+freshTypeVar' name traits = T.Var name (Set.fromList traits) <$>  varIdPlusPlus
 
 freshAlgebraicType :: TypeName -> Constrain T.Type
 freshAlgebraicType name = T.AlgebraicType name <$> lift varIdPlusPlus
@@ -448,4 +454,27 @@ constructorType :: QualifiedConstructorReference -> Constrain (Maybe T.Type)
 constructorType = valueType
 
 valueType :: QualifiedValueReference -> Constrain (Maybe T.Type)
-valueType qvr = liftA2 (<|>) (gets (getBatchValueType qvr)) (lift (gets ((getAnno <$>) <$> (`lookupVal` qvr))))
+valueType qvr = do
+  maybeT <- liftA2 (<|>) (gets (getBatchValueType qvr)) (lift (gets ((getAnno <$>) <$> (`lookupVal` qvr))))
+  -- There *is* a conciser way to write this, but it's beyond me at the moment
+  case maybeT of
+    Nothing -> return Nothing
+    Just t  -> lift (Just <$> anonymizeTypeVars t)
+
+anonymizeTypeVars :: T.Type -> State CompilerState T.Type
+anonymizeTypeVars t = evalStateT (anonymizeTypeVars' t) Map.empty
+
+anonymizeTypeVars' :: T.Type -> StateT (Map T.Type T.Type) (State CompilerState) T.Type
+anonymizeTypeVars' T.Int = return T.Int
+anonymizeTypeVars' T.Float = return T.Float
+anonymizeTypeVars' T.Char = return T.Char
+anonymizeTypeVars' T.String = return T.String
+anonymizeTypeVars' (T.List t) = T.List <$> anonymizeTypeVars' t
+anonymizeTypeVars' (T.Fun argTs retT) = T.Fun <$> mapM anonymizeTypeVars' argTs <*> anonymizeTypeVars' retT
+anonymizeTypeVars' (T.Record fieldSpec) = T.Record <$> mapM anonymizeTypeVars' fieldSpec
+anonymizeTypeVars' adt@(T.AlgebraicType name varId) = return adt
+anonymizeTypeVars' (T.TypeAlias alias t) = T.TypeAlias alias <$> anonymizeTypeVars' t
+anonymizeTypeVars' var@(T.Var name traits _) = do
+  maybeNewVar <- gets (Map.lookup var)
+  (`fromMaybe` maybeNewVar) <$> lift (freshTypeVar' name (Set.toList traits))
+anonymizeTypeVars' (T.PartialRecord fieldSpec varId) = (`T.PartialRecord` varId) <$> traverse anonymizeTypeVars' fieldSpec
