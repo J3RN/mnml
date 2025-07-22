@@ -129,9 +129,14 @@ spec = do
           other -> unexpected other
 
         case cs of
-          [  CEqual _ (T.Var "foo" _ _) (T.Var "fun" _ _)
-           , CEqual _ (T.Fun [T.Var {}] (T.Var {})) (T.Var "foo" _ _)
-           , CEqual _ (T.Var "fun" _ _) (T.Fun [T.Var {}] (T.Var {}))] -> pure ()
+          [ -- "fun 4" is a function whose return type is its argument type (named foo, but that isn't captured)
+             CEqual _ (T.Var "fun" _ 4) (T.Fun [T.Var "x" _ 3] (T.Var "x" _ 3))
+            -- foo is a function that takes a numeric and returns _something_
+           , CEqual _ (T.Fun [T.Var "num" _ 1] (T.Var "ret" _ 2)) (T.Var "foo" _ 0)
+           -- foo is "fun 5"
+           , CEqual _ (T.Var "foo" _ 0) (T.Var "fun" _ 7)
+           -- "fun 7" is an alias of "fun 4"
+           , CEqual _ (T.Var "fun" _ 7) (T.Fun [T.Var "x" _ 8] (T.Var "x" _ 8))] -> pure ()
 
           other -> unexpected other
 
@@ -142,6 +147,24 @@ spec = do
           TAST.ValueDef (TAST.EApp (TAST.EConstructor "Just" _) [TAST.ELit (TAST.LInt 5 _) _] _) _ -> pure ()
           other -> unexpected other
 
+        case cs of
+          [CEqual _ (T.Fun [T.Var {}] (T.Var {})) (T.Fun _ _)] -> return ()
+          other -> unexpected other
+
+    it "constrains circular reference with mutual partial type information" $ do
+      let source = Text.unlines
+            [ "Bool = True | False"
+            , "notFun = (x) => {"
+            , "  case x of"
+            , "    True -> False"
+            , "    False -> True"
+            , "}"
+            -- Only encodes return type info
+            , "foo = (x) => { notFun(bar(x)) }"
+            -- Only encodes parameter type info
+            , "bar = (y) => { foo(y - 1) }"
+            ]
+      expectBatch (parseAndConstrain source) $ \(batch, cs) -> do
         case cs of
           [CEqual _ (T.Fun [T.Var {}] (T.Var {})) (T.Fun _ _)] -> return ()
           other -> unexpected other

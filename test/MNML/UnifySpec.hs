@@ -32,7 +32,7 @@ expectValue :: HasCallStack => Either [Error] TAST.Batch -> QualifiedValueRefere
 expectValue res qvr expect = expectBatch res valExpect
   where valExpect batch = case TAST._valueDefs batch !? qvr of
                             Just valDef -> expect valDef
-                            Nothing     -> expectationFailure (concat ["Expected batch to have value definition for", show qvr, "but it did not"])
+                            Nothing     -> expectationFailure $ "Expected batch to have value definition for " <> show qvr <> " but it did not"
 
 spec :: Spec
 spec = do
@@ -109,9 +109,9 @@ spec = do
               ]
         expectValue (unify' source) ([], "main") $ \case
           TAST.ValueDef mainFun@(TAST.ELambda [] fooRef@(TAST.EVar "foo" _) _) _ -> do
-            nodeType mainFun `shouldBe` T.Fun [] (T.Var "num" (Set.singleton T.Numeric) 3)
+            nodeType mainFun `shouldBe` T.Fun [] (T.Var "num" (Set.singleton T.Numeric) 4)
             -- fooRef's type is *isomorphic* to foo, but is not the same to preserve numeric polymorphism (see lower)
-            nodeType fooRef `shouldBe` T.Var "num" (Set.singleton T.Numeric) 3
+            nodeType fooRef `shouldBe` T.Var "num" (Set.singleton T.Numeric) 4
             expectValue (unify' source) ([], "foo") $ \case
               TAST.ValueDef foo@(TAST.ELit (TAST.LInt 5 _) _) _ ->
                 nodeType foo `shouldBe` T.Var "num" (Set.singleton T.Numeric) 2
@@ -324,137 +324,131 @@ spec = do
               [ "main = foo(6.1)"
               , "foo = (x) => {x * 5}"
               ]
-        expectValue (unify' source) ([], "main") $ \case
+            unified = unify' source
+        expectValue unified ([], "main") $ \case
           TAST.ValueDef main@(TAST.EApp fooRef@(TAST.EVar "foo" _) [TAST.ELit (TAST.LFloat 6.1 _) _] _) _ -> do
             -- This reference to foo was monomorphized to Float, while foo itself is still generic (see below)
             nodeType fooRef `shouldBe` T.Fun [T.Float] T.Float
             nodeType main `shouldBe` T.Float
             pure ()
           other -> unexpected other
-        expectValue (unify' source) ([], "foo") $ \case
+        expectValue unified ([], "foo") $ \case
           TAST.ValueDef foo@(TAST.ELambda ["x"] (TAST.EBinary TAST.Mul (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 5 _) _) _) _) _ ->
             nodeType foo `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 3] (T.Var "num" (Set.singleton T.Numeric) 3)
           other -> unexpected other
 
-    --   it "allows functions with type constraints to stay generic" $ do
-    --     let (res, _cs) =
-    --           unify'
-    --             ( Text.unlines
-    --                 [ "main = () => { {float: foo(6.1), numeric: foo(5)} }"
-    --                 , "foo = (x) => {x * 5}"
-    --                 ]
-    --             )
-    --     case res of
-    --       Right
-    --         [ (("test", "main"), main@(TAST.ELambda [] (TAST.ERecord _ _) _))
-    --           , ( ("test", "foo")
-    --               , foo@(TAST.ELambda ["x"] (TAST.EBinary TAST.Mul (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 5 _) _) _) _)
-    --               )
-    --           ] -> do
-    --           nodeType main
-    --             `shouldBe` T.Fun
-    --               []
-    --               (T.Record (Map.fromList [("float", T.Float), ("numeric", T.Var "num" (Set.singleton T.Numeric) 3)]))
-    --           nodeType foo
-    --             `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 8] (T.Var "num" (Set.singleton T.Numeric) 8)
-    --       other -> unexpected other
+      it "allows functions with type constraints to stay generic" $ do
+        let source = Text.unlines
+                       [ "main = () => { {float: foo(6.1), numeric: foo(5)} }"
+                       , "foo = (x) => {x * 5}"
+                       ]
+            unified = unify' source
 
-    --   it "allows functions with partial records to stay generic" $ do
-    --     let (res, _cs) =
-    --           unify'
-    --             ( Text.unlines
-    --                 [ "main = () => { {string: foo({abc: \"def\", name: \"foo\"}), float: foo({baz: 2, name: 5.1})} }"
-    --                 , "foo = (x) => {"
-    --                 , "  case x of"
-    --                 , "    {name: a} -> a"
-    --                 , "}"
-    --                 ]
-    --             )
-    --     case res of
-    --       Right
-    --         [ (("test", "main"), main@(TAST.ELambda [] (TAST.ERecord _ _) _))
-    --           , ( ("test", "foo")
-    --               , foo@( TAST.ELambda
-    --                         ["x"]
-    --                         (TAST.ECase (TAST.EVar "x" _) [(TAST.PRecord [("name", TAST.PVar "a" _)] _, TAST.EVar "a" _)] _)
-    --                         _
-    --                       )
-    --               )
-    --           ] -> do
-    --           nodeType main `shouldBe` T.Fun [] (T.Record (Map.fromList [("string", T.String), ("float", T.Float)]))
-    --           nodeType foo
-    --             `shouldBe` T.Fun
-    --               [T.PartialRecord (Map.fromList [("name", T.Var "a" Set.empty 10)]) 12]
-    --               (T.Var "a" Set.empty 10)
-    --       other -> unexpected other
+        expectValue unified ([], "main") $ \case
+          TAST.ValueDef main@(TAST.ELambda [] (TAST.ERecord _ _) _) _ -> do
+            nodeType main `shouldBe` T.Fun [] (T.Record (Map.fromList [("float", T.Float), ("numeric", T.Var "num" (Set.singleton T.Numeric) 3)]))
+          other -> unexpected other
 
-    --   it "unifies trivial circular reference" $ do
-    --     let (res, _cs) = unify' (Text.unlines ["main = () => { foo() }", "foo = () => { main() }"])
-    --     case res of
-    --       Right
-    --         [ (("test", "main"), main@(TAST.ELambda [] (TAST.EApp (TAST.EVar "foo" _) [] _) _))
-    --           , (("test", "foo"), foo@(TAST.ELambda [] (TAST.EApp (TAST.EVar "main" _) [] _) _))
-    --           ] -> do
-    --           nodeType main `shouldBe` T.Fun [] (T.Var "ret" Set.empty 1)
-    --           nodeType foo `shouldBe` T.Fun [] (T.Var "ret" Set.empty 4)
-    --       other -> unexpected other
+        expectValue unified ([], "foo") $ \case
+          TAST.ValueDef foo@(TAST.ELambda ["x"] (TAST.EBinary TAST.Mul (TAST.EVar "x" _) (TAST.ELit (TAST.LInt 5 _) _) _) _) _ ->
+            nodeType foo `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 8] (T.Var "num" (Set.singleton T.Numeric) 8)
+          other -> unexpected other
 
-    --   it "unifies practical circular reference" $ do
-    --     let (res, _cs) =
-    --           unify'
-    --             ( Text.unlines
-    --                 [ "Bool = True | False"
-    --                 , "main = (x) => {"
-    --                 , "  case x of"
-    --                 , "    0 -> True"
-    --                 , "    y -> odd(y - 1)"
-    --                 , "}"
-    --                 , "odd = (x) => {"
-    --                 , "  case x of"
-    --                 , "    1 -> True"
-    --                 , "    y -> main(y - 1)"
-    --                 , "}"
-    --                 ]
-    --             )
-    --     case res of
-    --       Right
-    --         [ ( ("test", "main")
-    --             , main@( TAST.ELambda
-    --                       ["x"]
-    --                       ( TAST.ECase
-    --                           (TAST.EVar "x" _)
-    --                           [ (TAST.PLiteral (TAST.LInt 0 _) _, TAST.EConstructor "True" _)
-    --                             , ( TAST.PVar "y" _
-    --                                 , TAST.EApp
-    --                                     (TAST.EVar "odd" _)
-    --                                     [TAST.EBinary TAST.Sub (TAST.EVar "y" _) (TAST.ELit (TAST.LInt 1 _) _) _]
-    --                                     _
-    --                                 )
-    --                             ]
-    --                           _
-    --                         )
-    --                       _
-    --                     )
-    --             )
-    --           , ( ("test", "odd")
-    --               , oddFun@( TAST.ELambda
-    --                           ["x"]
-    --                           ( TAST.ECase
-    --                               (TAST.EVar "x" _)
-    --                               [ (TAST.PLiteral (TAST.LInt 1 _) _, TAST.EConstructor "True" _)
-    --                                 , ( TAST.PVar "y" _
-    --                                     , TAST.EApp
-    --                                         (TAST.EVar "main" _)
-    --                                         [TAST.EBinary TAST.Sub (TAST.EVar "y" _) (TAST.ELit (TAST.LInt 1 _) _) _]
-    --                                         _
-    --                                     )
-    --                                 ]
-    --                               _
-    --                             )
-    --                           _
-    --                         )
-    --               )
-    --           ] -> do
-    --           nodeType main `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 1] (T.AlgebraicType "Bool")
-    --           nodeType oddFun `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 10] (T.AlgebraicType "Bool")
-    --       other -> unexpected other
+    it "allows functions with partial records to stay generic" $ do
+      let source = Text.unlines
+            [ "main = () => { {string: foo({abc: \"def\", name: \"foo\"}), float: foo({baz: 2, name: 5.1})} }"
+            , "foo = (x) => {"
+            , "  case x of"
+            , "    {name: a} -> a"
+            , "}"
+            ]
+          unified = unify' source
+      expectValue unified ([], "main") $ \case
+        TAST.ValueDef main@(TAST.ELambda [] (TAST.ERecord _ _) _) _ ->
+          nodeType main `shouldBe` T.Fun [] (T.Record (Map.fromList [("string", T.String), ("float", T.Float)]))
+        other -> unexpected other
+      expectValue unified ([], "foo") $ \case
+        TAST.ValueDef foo@(TAST.ELambda ["x"] (TAST.ECase (TAST.EVar "x" _) [(TAST.PRecord [("name", TAST.PVar "a" _)] _, TAST.EVar "a" _)] _) _) _ ->
+          nodeType foo `shouldBe` T.Fun [T.PartialRecord (Map.fromList [("name", T.Var "a" Set.empty 10)]) 12] (T.Var "a" Set.empty 10)
+        other -> unexpected other
+
+    it "unifies trivial circular reference" $ do
+      let source = Text.unlines ["main = () => { foo() }", "foo = () => { main() }"]
+          unified = unify' source
+      expectValue unified ([], "main") $ \case
+        TAST.ValueDef main@(TAST.ELambda [] (TAST.EApp (TAST.EVar "foo" _) [] _) _) _ ->
+          nodeType main `shouldBe` T.Fun [] (T.Var "ret" Set.empty 1)
+        other -> unexpected other
+      expectValue unified ([], "foo") $ \case
+        TAST.ValueDef foo@(TAST.ELambda [] (TAST.EApp (TAST.EVar "main" _) [] _) _) _ ->
+          nodeType foo `shouldBe` T.Fun [] (T.Var "ret" Set.empty 4)
+        other -> unexpected other
+
+    it "unifies practical circular reference" $ do
+      let source = Text.unlines
+            [ "Bool = True | False"
+            , "even = (x) => {"
+            , "  case x of"
+            , "    0 -> True"
+            , "    y -> odd(y - 1)"
+            , "}"
+            , "odd = (x) => {"
+            , "  case x of"
+            , "    1 -> True"
+            , "    y -> even(y - 1)"
+            , "}"
+            ]
+          unified = unify' source
+      expectValue unified ([], "even") $ \case
+        TAST.ValueDef evenFun@(TAST.ELambda ["x"]
+                            (TAST.ECase (TAST.EVar "x" _)
+                             [ (TAST.PLiteral (TAST.LInt 0 _) _, TAST.EConstructor "True" _)
+                             , (TAST.PVar "y" _, TAST.EApp (TAST.EVar "odd" _) [TAST.EBinary TAST.Sub (TAST.EVar "y" _) (TAST.ELit (TAST.LInt 1 _) _) _] _)
+                             ]
+                             _
+                            )
+                            _
+                           ) _ ->
+          nodeType evenFun `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 2] (T.AlgebraicType "Bool" 0)
+        other -> unexpected other
+      expectValue unified ([], "odd") $ \case
+        TAST.ValueDef oddFun@(TAST.ELambda ["x"]
+                              (TAST.ECase (TAST.EVar "x" _)
+                               [ (TAST.PLiteral (TAST.LInt 1 _) _, TAST.EConstructor "True" _)
+                               , (TAST.PVar "y" _, TAST.EApp (TAST.EVar "even" _) [TAST.EBinary TAST.Sub (TAST.EVar "y" _) (TAST.ELit (TAST.LInt 1 _) _) _] _)
+                               ]
+                               _
+                              )
+                              _
+                             ) _ ->
+          nodeType oddFun `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 11] (T.AlgebraicType "Bool" 0)
+        other -> unexpected other
+
+    it "unifies circular reference with mutual partial type information" $ do
+      let source = Text.unlines
+            [ "Bool = True | False"
+            , "notFun = (x) => {"
+            , "  case x of"
+            , "    True -> False"
+            , "    False -> True"
+            , "}"
+            -- Only encodes return type info
+            , "foo = (x) => { notFun(bar(x)) }"
+            -- Only encodes parameter type info
+            , "bar = (y) => { foo(y - 1) }"
+            ]
+          unified = unify' source
+      expectValue unified ([], "notFun") $ \case
+        TAST.ValueDef notFun _ -> nodeType notFun `shouldBe` T.Fun [T.AlgebraicType "Bool" 0] (T.AlgebraicType "Bool" 0)
+      expectValue unified ([], "foo") $ \case
+        TAST.ValueDef foo@(TAST.ELambda ["x"]
+                            (TAST.EApp (TAST.EVar "notFun" _) [TAST.EApp (TAST.EVar "bar" _) [TAST.EVar "x" _] _] _) _) _ ->
+          nodeType foo `shouldBe` T.Fun [T.Var "ret" (Set.singleton T.Numeric) 37] (T.AlgebraicType "Bool" 0)
+        other -> unexpected other
+      expectValue unified ([], "bar") $ \case
+        TAST.ValueDef bar@(TAST.ELambda ["y"]
+                              _
+                              _
+                             ) _ ->
+          nodeType bar `shouldBe` T.Fun [T.Var "num" (Set.singleton T.Numeric) 12] (T.AlgebraicType "Bool" 0)
+        other -> unexpected other
