@@ -7,4 +7,7 @@ import           MNML.Type     (Type)
 
 data Constraint
   = CEqual SourceSpan Type Type
-  deriving (Eq, Show)
+  deriving (Eq)
+
+instance Show Constraint where
+  show (CEqual _ l r) = show l <> " == " <> show r

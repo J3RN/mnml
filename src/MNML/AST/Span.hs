@@ -20,7 +20,9 @@ data SourceSpan
       { _spanStart :: SourcePos
       , _spanEnd   :: SourcePos
       }
-  deriving (Eq, Show)
+  deriving (Eq)
+instance Show SourceSpan where
+  show _ = ""
 
 type Batch = [Definition]
 

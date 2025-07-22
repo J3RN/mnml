@@ -7,7 +7,9 @@ module MNML.Type
 
 import           Data.Map  (Map)
 import           Data.Set  (Set)
+import qualified Data.Set  as Set
 import           Data.Text (Text)
+import qualified Data.Text as Text
 
 type VarId = Integer
 
@@ -31,4 +33,31 @@ data Type
   | Var Text (Set Trait) VarId
   -- A "partial record"; similar to a variable with traits
   | PartialRecord FieldSpec VarId
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show Type where
+  show Int                      = "Int"
+  show Float                    = "Float"
+  show Char                     = "Char"
+  show String                   = "String"
+  show (List t)                 = "[" <> show t <> "]"
+  show (Fun argTs retT)         = "(" <> concatMap show argTs <> ") -> " <> show retT
+  show (Record fieldSpec)       = "Record(" <> show fieldSpec <> ")"
+  show (AlgebraicType name vId) = Text.unpack name <> varId vId
+  show (TypeAlias name _t)      = Text.unpack name
+  show (Var name traits vId)    = Text.unpack name <> (if traits /= Set.empty then show (Set.toList traits) else "") <> varId vId
+  show (PartialRecord fieldSpec vId) = "PartialRecord(" <> show fieldSpec <> ")" <> varId vId
+
+varId :: VarId -> String
+varId vid = map varId' (show vid)
+  where varId' '1' = '¹'
+        varId' '2' = '²'
+        varId' '3' = '³'
+        varId' '4' = '⁴'
+        varId' '5' = '⁵'
+        varId' '6' = '⁶'
+        varId' '7' = '⁷'
+        varId' '8' = '⁸'
+        varId' '9' = '⁹'
+        varId' '0' = '⁰'
+        varId' _   = '*'
