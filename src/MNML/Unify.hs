@@ -13,8 +13,10 @@ import qualified Data.Set             as Set
 import           Lens.Micro           (Lens', lens, over)
 import qualified MNML.AST.Span        as SAST
 import qualified MNML.AST.Type        as TAST
+import           MNML.Base            (QualifiedValueReference)
 import           MNML.CompilerState   (CompilerState (..), varIdPlusPlus)
 import           MNML.Constraint      (Constraint (..))
+import qualified MNML.Constraint      as C
 import           MNML.Error           (Error (UnificationError), Fallible,
                                        UnificationError (..))
 import qualified MNML.Type            as T
@@ -43,6 +45,21 @@ type Unify = StateT UnifyEnv (State CompilerState)
 
 addError :: UnificationError -> Unify ()
 addError err = modify (over errors (err:))
+
+-- The real "meat"
+
+unify :: TAST.Batch -> Fallible TAST.Batch
+unify batch = do
+  res <- lift (runStateT (mapM unifyValDef (TAST._valueDefs batch)) (UnifyEnv {_errors = [], _subst = Map.empty}))
+  return _
+  -- TODO: Really unify' shouldn't return anything; the errors should be in the env
+  -- (maybeErr, env) <- lift (runStateT (unify' cs) (UnifyEnv {_errors = [], _subst = Map.empty}))
+  -- case maybeErr of
+  --   Just err -> throwError [UnificationError err]
+  --   Nothing  -> return (batch {TAST._valueDefs = Map.map (resolveTypeAnno (_subst env)) (TAST._valueDefs batch)})
+
+unifyValDef :: (TAST.ValueDef, [C.Constraint]) -> Unify (Maybe UnificationError)
+unifyValDef = _
 
 -- Unify a set of constraints
 
@@ -172,14 +189,6 @@ applySubst subs (T.TypeAlias name t) = T.TypeAlias name (applySubst subs t)
 applySubst (var1, rep) var2 | var1 == var2 = rep
 applySubst _ var@(T.Var {}) = var
 applySubst subs (T.PartialRecord fieldSpec prId) = T.PartialRecord (Map.map (applySubst subs) fieldSpec) prId
-
-unify :: (TAST.Batch, [Constraint]) -> Fallible TAST.Batch
-unify (batch, cs) = do
-  -- TODO: Really unify' shouldn't return anything; the errors should be in the env
-  (maybeErr, env) <- lift (runStateT (unify' cs) (UnifyEnv {_errors = [], _subst = Map.empty}))
-  case maybeErr of
-    Just err -> throwError [UnificationError err]
-    Nothing  -> return (batch {TAST._valueDefs = Map.map (resolveTypeAnno (_subst env)) (TAST._valueDefs batch)})
 
 resolveTypeAnno :: Subst -> TAST.ValueDef -> TAST.ValueDef
 resolveTypeAnno subs (TAST.ValueDef expr spanA) = TAST.ValueDef (resolveTypeAnno' subs expr) spanA

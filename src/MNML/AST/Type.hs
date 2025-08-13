@@ -1,6 +1,5 @@
 module MNML.AST.Type
     ( Annotated (..)
-    , Batch (..)
     , Constructor (..)
     , Expr (..)
     , Literal (..)
@@ -13,32 +12,13 @@ module MNML.AST.Type
     , nodeSpan
     , nodeType
     , setNodeType
-    , typeDefs
-    , valueDefs
     ) where
 
 import           Data.Bifunctor (bimap, second)
-import           Data.Map       (Map)
 import           Data.Text      (Text)
-import           Lens.Micro     (Lens', lens)
 import           MNML.AST.Span  (SourceSpan (..), Spanned (..))
-import           MNML.Base      (QualifiedTypeReference,
-                                 QualifiedValueReference)
 import qualified MNML.Type      as T
 import           Text.Parsec    (SourcePos)
-
-data Batch
-  = Batch
-      { _typeDefs  :: Map QualifiedTypeReference TypeDef
-      , _valueDefs :: Map QualifiedValueReference ValueDef
-      }
-  deriving (Eq, Show)
-
-typeDefs :: Lens' Batch (Map QualifiedTypeReference TypeDef)
-typeDefs = lens _typeDefs (\ce td -> ce {_typeDefs = td})
-
-valueDefs :: Lens' Batch (Map QualifiedValueReference ValueDef)
-valueDefs = lens _valueDefs (\ce te -> ce {_valueDefs = te})
 
 data TypeDef
   = TypeDef T.Type SourceSpan
